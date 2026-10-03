@@ -1,6 +1,7 @@
 """均线择时策略（含回踩模式）"""
 
 import numpy as np
+
 from services.strategies.base import BaseStrategy, StrategyParam, sma
 
 
@@ -13,11 +14,16 @@ class TimingStrategy(BaseStrategy):
 
     def params_schema(self):
         return [
-            StrategyParam("mode", "信号模式", "select", "crossover",
-                          options=[
-                              {"value": "crossover", "label": "金叉/死叉"},
-                              {"value": "pullback", "label": "回踩买入"},
-                          ]),
+            StrategyParam(
+                "mode",
+                "信号模式",
+                "select",
+                "crossover",
+                options=[
+                    {"value": "crossover", "label": "金叉/死叉"},
+                    {"value": "pullback", "label": "回踩买入"},
+                ],
+            ),
             StrategyParam("fast_ma", "快线周期", "int", 20, min=5, max=60, step=1),
             StrategyParam("slow_ma", "慢线周期", "int", 60, min=20, max=120, step=1),
             StrategyParam("threshold", "回踩阈值(%)", "float", 1.5, min=0.5, max=3.0, step=0.1),

@@ -1,19 +1,23 @@
-from typing import Dict, Any, Optional
-from pydantic import BaseModel
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel
+
 
 class StrategyBase(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     strategy_type: str
-    parameters: Dict[str, Any]
+    parameters: dict[str, Any]
+
 
 class StrategyCreate(StrategyBase):
     pass
 
+
 class StrategyResponse(StrategyBase):
     id: int
-    owner_id: Optional[int]
+    owner_id: int | None
     created_at: datetime
     updated_at: datetime
 

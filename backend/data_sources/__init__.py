@@ -3,9 +3,9 @@
 支持 Tushare, Baostock, AkShare
 """
 
-from .base import DataSourceBase
 from .akshare_source import AkShareSource
 from .baostock_source import BaostockSource
+from .base import DataSourceBase
 
 # Tushare 需要 Token，单独处理
 try:
@@ -13,9 +13,4 @@ try:
 except ImportError:
     TushareSource = None
 
-__all__ = [
-    'DataSourceBase',
-    'AkShareSource',
-    'BaostockSource',
-    'TushareSource'
-]
+__all__ = ["DataSourceBase", "AkShareSource", "BaostockSource", "TushareSource"]

@@ -4,11 +4,11 @@
 保持 jobs/ 目录模式统一：main.py 调度器只和 jobs/ 层交互。
 实际逻辑在 services/news/pipeline.py。
 """
+
 from services.news.pipeline import get_pipeline
-from typing import List, Dict, Optional
 
 
-def sync_stock_news(codes: List[str], stock_names: Optional[Dict[str, str]] = None) -> int:
+def sync_stock_news(codes: list[str], stock_names: dict[str, str] | None = None) -> int:
     """
     抓取新闻并写入数据库（三源合并 + 去重）
 

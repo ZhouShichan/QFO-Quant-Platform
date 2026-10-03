@@ -4,9 +4,10 @@
 StockMoneyFlow / StockShareholderCount 的批量写入。
 """
 
-import structlog
-import pandas as pd
 from datetime import date as date_type
+
+import pandas as pd
+import structlog
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -40,15 +41,17 @@ class SentimentWriter:
             sell_elg = float(row.get("sell_elg_amount", 0) or 0)
             net_mf = (buy_lg + buy_elg) - (sell_lg + sell_elg)
 
-            records.append({
-                "code": row["ts_code"],
-                "trade_date": trade_date,
-                "buy_lg_amount": buy_lg,
-                "sell_lg_amount": sell_lg,
-                "buy_elg_amount": buy_elg,
-                "sell_elg_amount": sell_elg,
-                "net_mf_amount": net_mf,
-            })
+            records.append(
+                {
+                    "code": row["ts_code"],
+                    "trade_date": trade_date,
+                    "buy_lg_amount": buy_lg,
+                    "sell_lg_amount": sell_lg,
+                    "buy_elg_amount": buy_elg,
+                    "sell_elg_amount": sell_elg,
+                    "net_mf_amount": net_mf,
+                }
+            )
 
         if not records:
             return
@@ -66,7 +69,6 @@ class SentimentWriter:
         """)
         db.execute(sql, records)
         log.info("upsert_moneyflow", trade_date=str(trade_date), count=len(records))
-
 
     # ================================================================
     #  股东户数 (StockShareholderCount)

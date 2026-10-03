@@ -1,6 +1,7 @@
 """多因子选股策略（含纯估值模式）"""
 
 import numpy as np
+
 from services.strategies.base import BaseStrategy, StrategyParam
 
 
@@ -28,18 +29,28 @@ class MultifactorStrategy(BaseStrategy):
 
     def params_schema(self):
         return [
-            StrategyParam("mode", "选股模式", "select", "composite",
-                          options=[
-                              {"value": "composite", "label": "多因子复合"},
-                              {"value": "value_only", "label": "纯低估值"},
-                          ]),
+            StrategyParam(
+                "mode",
+                "选股模式",
+                "select",
+                "composite",
+                options=[
+                    {"value": "composite", "label": "多因子复合"},
+                    {"value": "value_only", "label": "纯低估值"},
+                ],
+            ),
             StrategyParam("top_n", "持仓数量", "int", 5, min=1, max=20, step=1),
-            StrategyParam("rebalance", "调仓周期", "select", "monthly",
-                          options=[
-                              {"value": "weekly", "label": "每周"},
-                              {"value": "monthly", "label": "每月"},
-                              {"value": "quarterly", "label": "每季"},
-                          ]),
+            StrategyParam(
+                "rebalance",
+                "调仓周期",
+                "select",
+                "monthly",
+                options=[
+                    {"value": "weekly", "label": "每周"},
+                    {"value": "monthly", "label": "每月"},
+                    {"value": "quarterly", "label": "每季"},
+                ],
+            ),
         ]
 
     @property

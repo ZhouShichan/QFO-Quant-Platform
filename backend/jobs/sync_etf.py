@@ -5,51 +5,164 @@ sync_etf_basic()  — 拉取场内 ETF 列表（Tushare fund_basic）
 sync_etf_daily()  — 拉取 ETF 日线写入 EtfDailyBar（独立表）
 """
 
-import structlog
-import pandas as pd
 from datetime import date, datetime
-from typing import Optional
+
+import pandas as pd
+import structlog
 
 from core.database import db_session
-from models.quant_data import EtfBasicInfo, EtfDailyBar
 from data_sources.tushare_source import TushareSource
+from models.quant_data import EtfBasicInfo, EtfDailyBar
 
 log = structlog.get_logger("sync_etf")
 
 # ── ETF 分类规则 ──
 
 _CATEGORY_KEYWORDS = {
-    "可转债":  ["转债"],
-    "REITs":  ["REITs", "REIT", "不动产", "公募基础设施"],
-    "跨境":   ["纳斯达克", "纳指", "标普", "日经", "德国", "法国", "恒生",
-              "港股", "H股", "巴西", "印度", "越南", "东南亚", "亚太",
-              "QDII", "美国", "全球", "沙特", "韩国", "英国"],
-    "商品":   ["黄金", "白银", "原油", "豆粕", "期货", "能源化工", "上海金"],
-    "行业":   ["医药", "消费", "科技", "芯片", "半导体", "新能源", "光伏",
-              "军工", "银行", "证券", "保险", "地产", "钢铁", "煤炭",
-              "白酒", "食品", "农业", "汽车", "传媒", "通信", "电力",
-              "基建", "环保", "人工智能", "数据", "云计算", "游戏",
-              "券商", "医疗", "生物", "化工", "机械", "电子", "计算机",
-              "5G", "碳中和", "稀土", "锂电", "有色",
-              # 补充遗漏的行业关键词
-              "石油", "家电", "软件", "养殖", "畜牧", "粮食", "农牧",
-              "家居", "电池", "机器人", "建材", "纺织", "旅游", "酿酒",
-              "水利", "交运", "物流", "航空", "船舶", "港口", "铁路",
-              "影视", "教育", "体育", "零售"],
-    "主题":   ["红利", "价值", "成长", "创新", "ESG", "央企", "国企",
-              "民企", "龙头", "低碳", "绿色", "新质", "智能", "数字经济",
-              "养老", "量化", "增强", "战略", "互联网", "一带一路",
-              "国潮", "专精特新", "北交所", "现金流"],
+    "可转债": ["转债"],
+    "REITs": ["REITs", "REIT", "不动产", "公募基础设施"],
+    "跨境": [
+        "纳斯达克",
+        "纳指",
+        "标普",
+        "日经",
+        "德国",
+        "法国",
+        "恒生",
+        "港股",
+        "H股",
+        "巴西",
+        "印度",
+        "越南",
+        "东南亚",
+        "亚太",
+        "QDII",
+        "美国",
+        "全球",
+        "沙特",
+        "韩国",
+        "英国",
+    ],
+    "商品": ["黄金", "白银", "原油", "豆粕", "期货", "能源化工", "上海金"],
+    "行业": [
+        "医药",
+        "消费",
+        "科技",
+        "芯片",
+        "半导体",
+        "新能源",
+        "光伏",
+        "军工",
+        "银行",
+        "证券",
+        "保险",
+        "地产",
+        "钢铁",
+        "煤炭",
+        "白酒",
+        "食品",
+        "农业",
+        "汽车",
+        "传媒",
+        "通信",
+        "电力",
+        "基建",
+        "环保",
+        "人工智能",
+        "数据",
+        "云计算",
+        "游戏",
+        "券商",
+        "医疗",
+        "生物",
+        "化工",
+        "机械",
+        "电子",
+        "计算机",
+        "5G",
+        "碳中和",
+        "稀土",
+        "锂电",
+        "有色",
+        # 补充遗漏的行业关键词
+        "石油",
+        "家电",
+        "软件",
+        "养殖",
+        "畜牧",
+        "粮食",
+        "农牧",
+        "家居",
+        "电池",
+        "机器人",
+        "建材",
+        "纺织",
+        "旅游",
+        "酿酒",
+        "水利",
+        "交运",
+        "物流",
+        "航空",
+        "船舶",
+        "港口",
+        "铁路",
+        "影视",
+        "教育",
+        "体育",
+        "零售",
+    ],
+    "主题": [
+        "红利",
+        "价值",
+        "成长",
+        "创新",
+        "ESG",
+        "央企",
+        "国企",
+        "民企",
+        "龙头",
+        "低碳",
+        "绿色",
+        "新质",
+        "智能",
+        "数字经济",
+        "养老",
+        "量化",
+        "增强",
+        "战略",
+        "互联网",
+        "一带一路",
+        "国潮",
+        "专精特新",
+        "北交所",
+        "现金流",
+    ],
 }
 
 # 宽基指数白名单（名称含这些关键词才是真正的宽基指数 ETF）
 _BROAD_INDEX_KEYWORDS = [
-    "沪深300", "中证500", "中证800", "中证1000", "中证2000",
-    "上证50", "上证180", "上证380",
-    "中证A50", "中证A500", "中证A100",
-    "深证100", "深证成指", "创业板",
-    "科创50", "科创100", "科创200", "北证50",
-    "MSCI", "中证全指", "万得全A", "国证2000",
+    "沪深300",
+    "中证500",
+    "中证800",
+    "中证1000",
+    "中证2000",
+    "上证50",
+    "上证180",
+    "上证380",
+    "中证A50",
+    "中证A500",
+    "中证A100",
+    "深证100",
+    "深证成指",
+    "创业板",
+    "科创50",
+    "科创100",
+    "科创200",
+    "北证50",
+    "MSCI",
+    "中证全指",
+    "万得全A",
+    "国证2000",
 ]
 
 # 排除的分类（债券/货币型不纳入）
@@ -61,23 +174,68 @@ _EXCLUDED_NAME_KW = ["LOF", "FOF", "定开", "封闭"]
 
 # ETF 名称关键词→股票行业名映射
 _ETF_INDUSTRY_MAP = {
-    '医药': '医药生物', '医疗': '医药生物', '生物': '医药生物',
-    '芯片': '电子', '半导体': '电子', '电子': '电子',
-    '银行': '银行', '证券': '非银金融', '券商': '非银金融', '保险': '非银金融',
-    '军工': '国防军工', '新能源': '电力设备', '光伏': '电力设备',
-    '钢铁': '钢铁', '煤炭': '煤炭', '白酒': '食品饮料', '酿酒': '食品饮料',
-    '食品': '食品饮料', '消费': '商贸零售', '零售': '商贸零售', '汽车': '汽车',
-    '传媒': '传媒', '影视': '传媒', '通信': '通信', '电力': '公用事业',
-    '地产': '房地产', '化工': '基础化工', '机械': '机械设备',
-    '计算机': '计算机', '人工智能': '计算机', '云计算': '计算机', '软件': '计算机',
-    '农业': '农林牧渔', '养殖': '农林牧渔', '畜牧': '农林牧渔', '农牧': '农林牧渔',
-    '粮食': '农林牧渔', '环保': '环保', '稀土': '有色金属', '有色': '有色金属', '锂电': '电力设备',
-    '电池': '电力设备', '游戏': '传媒', '科技': '计算机', '基建': '建筑装饰',
-    '家电': '家用电器', '家居': '家用电器', '建材': '建筑材料',
-    '石油': '石油石化', '纺织': '纺织服饰', '旅游': '社会服务',
-    '机器人': '机械设备', '船舶': '国防军工', '航空': '交通运输',
-    '交运': '交通运输', '物流': '交通运输', '港口': '交通运输', '铁路': '交通运输',
-    '碳中和': '环保', '大数据': '计算机', '5G': '通信', '体育': '社会服务',
+    "医药": "医药生物",
+    "医疗": "医药生物",
+    "生物": "医药生物",
+    "芯片": "电子",
+    "半导体": "电子",
+    "电子": "电子",
+    "银行": "银行",
+    "证券": "非银金融",
+    "券商": "非银金融",
+    "保险": "非银金融",
+    "军工": "国防军工",
+    "新能源": "电力设备",
+    "光伏": "电力设备",
+    "钢铁": "钢铁",
+    "煤炭": "煤炭",
+    "白酒": "食品饮料",
+    "酿酒": "食品饮料",
+    "食品": "食品饮料",
+    "消费": "商贸零售",
+    "零售": "商贸零售",
+    "汽车": "汽车",
+    "传媒": "传媒",
+    "影视": "传媒",
+    "通信": "通信",
+    "电力": "公用事业",
+    "地产": "房地产",
+    "化工": "基础化工",
+    "机械": "机械设备",
+    "计算机": "计算机",
+    "人工智能": "计算机",
+    "云计算": "计算机",
+    "软件": "计算机",
+    "农业": "农林牧渔",
+    "养殖": "农林牧渔",
+    "畜牧": "农林牧渔",
+    "农牧": "农林牧渔",
+    "粮食": "农林牧渔",
+    "环保": "环保",
+    "稀土": "有色金属",
+    "有色": "有色金属",
+    "锂电": "电力设备",
+    "电池": "电力设备",
+    "游戏": "传媒",
+    "科技": "计算机",
+    "基建": "建筑装饰",
+    "家电": "家用电器",
+    "家居": "家用电器",
+    "建材": "建筑材料",
+    "石油": "石油石化",
+    "纺织": "纺织服饰",
+    "旅游": "社会服务",
+    "机器人": "机械设备",
+    "船舶": "国防军工",
+    "航空": "交通运输",
+    "交运": "交通运输",
+    "物流": "交通运输",
+    "港口": "交通运输",
+    "铁路": "交通运输",
+    "碳中和": "环保",
+    "大数据": "计算机",
+    "5G": "通信",
+    "体育": "社会服务",
 }
 
 
@@ -169,10 +327,28 @@ _SUB_CATEGORY_RULES = {
         ("消费", ["酒", "小康"]),
         ("卫星国防", ["卫星", "国防", "军工"]),
         ("电信", ["电信"]),
-        ("综合指数", ["综合", "综指", "成份", "成指", "大盘", "中盘",
-                   "深证50", "上证580", "A股", "中创400", "A50",
-                   "央视财经", "运输", "交通", "深证300", "主板",
-                   "中小企业"]),
+        (
+            "综合指数",
+            [
+                "综合",
+                "综指",
+                "成份",
+                "成指",
+                "大盘",
+                "中盘",
+                "深证50",
+                "上证580",
+                "A股",
+                "中创400",
+                "A50",
+                "央视财经",
+                "运输",
+                "交通",
+                "深证300",
+                "主板",
+                "中小企业",
+            ],
+        ),
     ],
 }
 
@@ -188,7 +364,7 @@ def _sub_classify_etf(name: str, category: str) -> str:
     return None
 
 
-def sync_etf_basic(task_id: Optional[str] = None) -> int:
+def sync_etf_basic(task_id: str | None = None) -> int:
     """同步场内 ETF 基础信息"""
     log.info("sync_etf_basic_start")
     try:
@@ -229,29 +405,37 @@ def sync_etf_basic(task_id: Optional[str] = None) -> int:
             list_date_str = raw_date.strftime("%Y-%m-%d") if pd.notna(raw_date) else None
 
             category = _classify_etf(name, fund_type)
-            records.append({
-                "code": row["ts_code"],
-                "name": name,
-                "fund_type": fund_type,
-                "management": row.get("management", ""),
-                "benchmark": row.get("benchmark", ""),
-                "list_date": list_date_str,
-                "category": category,
-                "industry": _map_etf_industry(name) if category == "行业" else None,
-                # 行业 ETF 用 industry 作为 sub_category，其他用规则表推导
-                "sub_category": _map_etf_industry(name) if category == "行业" else _sub_classify_etf(name, category),
-                # “其他”分类不展示；未上市（list_date 为空或未来）也标为非活跃
-                "is_active": category != "其他" and bool(list_date_str) and list_date_str <= date.today().isoformat(),
-            })
+            records.append(
+                {
+                    "code": row["ts_code"],
+                    "name": name,
+                    "fund_type": fund_type,
+                    "management": row.get("management", ""),
+                    "benchmark": row.get("benchmark", ""),
+                    "list_date": list_date_str,
+                    "category": category,
+                    "industry": _map_etf_industry(name) if category == "行业" else None,
+                    # 行业 ETF 用 industry 作为 sub_category，其他用规则表推导
+                    "sub_category": _map_etf_industry(name)
+                    if category == "行业"
+                    else _sub_classify_etf(name, category),
+                    # “其他”分类不展示；未上市（list_date 为空或未来）也标为非活跃
+                    "is_active": category != "其他"
+                    and bool(list_date_str)
+                    and list_date_str <= date.today().isoformat(),
+                }
+            )
 
         from sqlalchemy import text as sa_text
+
         from settings import WRITE_BATCH_SIZE
+
         BATCH = WRITE_BATCH_SIZE
         with db_session() as db:
             db.execute(sa_text("DELETE FROM etf_basic_info"))
             db.flush()
             for i in range(0, len(records), BATCH):
-                db.bulk_insert_mappings(EtfBasicInfo, records[i:i + BATCH])
+                db.bulk_insert_mappings(EtfBasicInfo, records[i : i + BATCH])
             db.flush()
 
         count = len(records)
@@ -260,51 +444,61 @@ def sync_etf_basic(task_id: Optional[str] = None) -> int:
         # 刷新 bar_query 的 ETF 代码缓存
         try:
             from utils.bar_query import refresh_etf_cache
+
             refresh_etf_cache()
         except Exception:
             pass
 
         if task_id:
-            from utils.task_store import task_store, TaskStatus
-            task_store.update_task(task_id, TaskStatus.COMPLETED, result={
-                "progress": 100,
-                "message": f"ETF 列表同步完成: {count} 只",
-            })
+            from utils.task_store import TaskStatus, task_store
+
+            task_store.update_task(
+                task_id,
+                TaskStatus.COMPLETED,
+                result={
+                    "progress": 100,
+                    "message": f"ETF 列表同步完成: {count} 只",
+                },
+            )
 
         return count
 
     except Exception as e:
         log.error("sync_etf_basic_failed", error=str(e))
         if task_id:
-            from utils.task_store import task_store, TaskStatus
+            from utils.task_store import TaskStatus, task_store
+
             task_store.update_task(task_id, TaskStatus.FAILED, error=str(e))
         return 0
 
 
-def sync_etf_daily(task_id: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, force_refill: bool = False) -> int:
+def sync_etf_daily(
+    task_id: str | None = None, start_date: str | None = None, end_date: str | None = None, force_refill: bool = False
+) -> int:
     """
     同步 ETF 日线到 EtfDailyBar（按交易日遍历，每日1次API调用）。
     架构与 sync_bond_history 一致：bdate_range + 水位增量。
     """
     import time
+
     log.info("sync_etf_daily_start")
     try:
         ts = TushareSource()
         import data_sources.tushare_source as tushare_module
 
         with db_session() as db:
-            etf_codes = set(
-                r[0] for r in db.query(EtfBasicInfo.code).filter(EtfBasicInfo.is_active == True).all()
-            )
+            etf_codes = {r[0] for r in db.query(EtfBasicInfo.code).filter(EtfBasicInfo.is_active == True).all()}
         if not etf_codes:
             log.warning("no_etf_to_sync")
             return 0
 
         if not end_date:
             from utils.trade_date import resolve_end_date
+
             end_date = resolve_end_date(fmt="%Y%m%d")
         if not start_date:
             from datetime import timedelta
+
             start_date = (datetime.strptime(end_date, "%Y%m%d") - timedelta(days=730)).strftime("%Y%m%d")
             log.warning("etf_daily_no_start_date", fallback=start_date)
 
@@ -314,24 +508,28 @@ def sync_etf_daily(task_id: Optional[str] = None, start_date: Optional[str] = No
             log.info("etf_daily_force_refill", start_date=start_date)
         else:
             from jobs.sync_base import calc_next_start
+
             actual_start = calc_next_start("etf_daily", "all", start_date)
 
         if actual_start > end_date:
-            log.info("etf_daily_already_up_to_date",
-                     start=actual_start, end=end_date)
+            log.info("etf_daily_already_up_to_date", start=actual_start, end=end_date)
             if task_id:
-                from utils.task_store import task_store, TaskStatus
-                task_store.update_task(task_id, TaskStatus.COMPLETED, result={
-                    "progress": 100, "message": "ETF 日线已是最新",
-                })
+                from utils.task_store import TaskStatus, task_store
+
+                task_store.update_task(
+                    task_id,
+                    TaskStatus.COMPLETED,
+                    result={
+                        "progress": 100,
+                        "message": "ETF 日线已是最新",
+                    },
+                )
             return 0
 
         # ── 按真实交易日遍历（trade_cal 跳过节假日） ──
         @tushare_module.with_tushare_retry(max_retries=2, delay=1.0)
         def _fetch_trade_cal():
-            return ts.pro.trade_cal(
-                start_date=actual_start, end_date=end_date, is_open="1"
-            )
+            return ts.pro.trade_cal(start_date=actual_start, end_date=end_date, is_open="1")
 
         df_cal = _fetch_trade_cal()
         if df_cal is not None and not df_cal.empty:
@@ -345,19 +543,25 @@ def sync_etf_daily(task_id: Optional[str] = None, start_date: Optional[str] = No
         if total_days == 0:
             log.info("etf_daily_no_trade_days", start=actual_start, end=end_date)
             if task_id:
-                from utils.task_store import task_store, TaskStatus
-                task_store.update_task(task_id, TaskStatus.COMPLETED, result={
-                    "progress": 100, "message": "无待同步交易日",
-                })
+                from utils.task_store import TaskStatus, task_store
+
+                task_store.update_task(
+                    task_id,
+                    TaskStatus.COMPLETED,
+                    result={
+                        "progress": 100,
+                        "message": "无待同步交易日",
+                    },
+                )
             return 0
 
-        log.info("sync_etf_daily_date_range", days=total_days,
-                 start=actual_start, end=end_date)
+        log.info("sync_etf_daily_date_range", days=total_days, start=actual_start, end=end_date)
 
         t0 = time.time()
         total_rows = 0
         for day_idx, trade_date_str in enumerate(trade_dates, 1):
             try:
+
                 @tushare_module.with_tushare_retry(max_retries=2, delay=0.5)
                 def _fetch_daily(td=trade_date_str):
                     return ts.pro.fund_daily(
@@ -377,84 +581,100 @@ def sync_etf_daily(task_id: Optional[str] = None, start_date: Optional[str] = No
                 records = []
                 trade_date_val = pd.to_datetime(trade_date_str, format="%Y%m%d").date()
                 for _, row in df.iterrows():
-                    records.append({
-                        "code": row["ts_code"],
-                        "trade_date": trade_date_val,
-                        "open": row.get("open"),
-                        "high": row.get("high"),
-                        "low": row.get("low"),
-                        "close": row.get("close"),
-                        "pre_close": row.get("pre_close"),
-                        "change": row.get("change"),
-                        "pct_chg": row.get("pct_chg"),
-                        "volume": row.get("vol"),
-                        "amount": row.get("amount"),
-                    })
+                    records.append(
+                        {
+                            "code": row["ts_code"],
+                            "trade_date": trade_date_val,
+                            "open": row.get("open"),
+                            "high": row.get("high"),
+                            "low": row.get("low"),
+                            "close": row.get("close"),
+                            "pre_close": row.get("pre_close"),
+                            "change": row.get("change"),
+                            "pct_chg": row.get("pct_chg"),
+                            "volume": row.get("vol"),
+                            "amount": row.get("amount"),
+                        }
+                    )
 
                 if records:
                     from sqlalchemy import text as sa_text
+
                     with db_session() as db:
                         # 先删当天数据再插入
-                        db.execute(sa_text(
-                            "DELETE FROM etf_daily_bars WHERE trade_date=:td"
-                        ), {"td": trade_date_val})
+                        db.execute(sa_text("DELETE FROM etf_daily_bars WHERE trade_date=:td"), {"td": trade_date_val})
                         db.bulk_insert_mappings(EtfDailyBar, records)
 
                 total_rows += len(records)
 
                 if task_id:
-                    from utils.task_store import task_store, TaskStatus
-                    task_store.update_task(task_id, TaskStatus.IN_PROGRESS, result={
-                        "progress": round(day_idx / total_days * 100),
-                        "message": f"ETF 日线: {day_idx}/{total_days} 天, {total_rows} 条",
-                    })
+                    from utils.task_store import TaskStatus, task_store
+
+                    task_store.update_task(
+                        task_id,
+                        TaskStatus.IN_PROGRESS,
+                        result={
+                            "progress": round(day_idx / total_days * 100),
+                            "message": f"ETF 日线: {day_idx}/{total_days} 天, {total_rows} 条",
+                        },
+                    )
 
                 # Tushare 限频
                 time.sleep(0.3)
 
             except Exception as e:
-                log.warning("etf_daily_day_failed",
-                            trade_date=trade_date_str, error=str(e))
+                log.warning("etf_daily_day_failed", trade_date=trade_date_str, error=str(e))
                 continue
 
         log.info("sync_etf_daily_done", total_rows=total_rows, days=total_days)
 
         # ── 写入显式水位（取 DB 实际最新日期，与 bars 对齐）──
         from jobs.sync_base import write_watermark
+
         try:
             from sqlalchemy import text as sa_text
+
             with db_session() as _db:
-                _r = _db.execute(sa_text(
-                    "SELECT MAX(trade_date) FROM etf_daily_bars"
-                )).fetchone()
+                _r = _db.execute(sa_text("SELECT MAX(trade_date) FROM etf_daily_bars")).fetchone()
                 actual_max = str(_r[0]).replace("-", "")[:8] if _r and _r[0] else end_date
         except Exception:
             actual_max = end_date
         write_watermark(
-            data_type="etf_daily", mode="all",
-            last_sync_date=actual_max, t_start=t0,
+            data_type="etf_daily",
+            mode="all",
+            last_sync_date=actual_max,
+            t_start=t0,
             status="success" if total_rows > 0 else "empty",
         )
 
         if task_id:
-            from utils.task_store import task_store, TaskStatus
-            task_store.update_task(task_id, TaskStatus.COMPLETED, result={
-                "progress": 100,
-                "message": f"ETF 日线同步完成: {total_days} 天, {total_rows} 条",
-            })
+            from utils.task_store import TaskStatus, task_store
+
+            task_store.update_task(
+                task_id,
+                TaskStatus.COMPLETED,
+                result={
+                    "progress": 100,
+                    "message": f"ETF 日线同步完成: {total_days} 天, {total_rows} 条",
+                },
+            )
 
         return total_rows
 
     except Exception as e:
         log.error("sync_etf_daily_failed", error=str(e))
         from jobs.sync_base import write_watermark
+
         write_watermark(
-            data_type="etf_daily", mode="all",
-            last_sync_date=end_date or "", t_start=time.time(),
-            status="failed", error_msg=str(e),
+            data_type="etf_daily",
+            mode="all",
+            last_sync_date=end_date or "",
+            t_start=time.time(),
+            status="failed",
+            error_msg=str(e),
         )
         if task_id:
-            from utils.task_store import task_store, TaskStatus
+            from utils.task_store import TaskStatus, task_store
+
             task_store.update_task(task_id, TaskStatus.FAILED, error=str(e))
         return 0
-

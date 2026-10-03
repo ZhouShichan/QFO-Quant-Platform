@@ -8,7 +8,6 @@ POST /portfolio/optimize
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional, Dict
 
 from services.portfolio_service import PortfolioService
 from settings import TRADING_DAYS
@@ -19,30 +18,30 @@ _portfolio = PortfolioService()
 
 
 class OptimizeRequest(BaseModel):
-    codes: List[str]
-    method: str = "max_sharpe"            # max_sharpe | risk_parity | min_variance | equal_weight
-    lookback_days: int = TRADING_DAYS              # 历史窗口（交易日）
-    expected_returns: Optional[Dict[str, float]] = None  # 可注入因子评分
-    stock_names: Optional[Dict[str, str]] = None         # {code: name} 用于展示
+    codes: list[str]
+    method: str = "max_sharpe"  # max_sharpe | risk_parity | min_variance | equal_weight
+    lookback_days: int = TRADING_DAYS  # 历史窗口（交易日）
+    expected_returns: dict[str, float] | None = None  # 可注入因子评分
+    stock_names: dict[str, str] | None = None  # {code: name} 用于展示
 
 
 class OptimizeAllRequest(BaseModel):
-    codes: List[str]
+    codes: list[str]
     lookback_days: int = TRADING_DAYS
-    expected_returns: Optional[Dict[str, float]] = None
-    stock_names: Optional[Dict[str, str]] = None
+    expected_returns: dict[str, float] | None = None
+    stock_names: dict[str, str] | None = None
 
 
-def _fill_names(result: dict, stock_names: Optional[Dict[str, str]]):
+def _fill_names(result: dict, stock_names: dict[str, str] | None):
     """填充真实名称（兼容 6位/带后缀 两种格式）"""
     if not stock_names:
         return
     name_lookup = dict(stock_names)
     for k, v in stock_names.items():
-        name_lookup[k.split('.')[0]] = v
+        name_lookup[k.split(".")[0]] = v
     for h in result.get("holdings", []):
         code = h["code"]
-        clean = code.split('.')[0]
+        clean = code.split(".")[0]
         h["name"] = name_lookup.get(code) or name_lookup.get(clean) or code
 
 
@@ -71,7 +70,7 @@ def optimize_portfolio(req: OptimizeRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/optimize-all")
@@ -102,21 +101,20 @@ def optimize_all(req: OptimizeAllRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # ── 再平衡模拟 ──
 
+
 class RebalanceSimRequest(BaseModel):
-    codes: List[str]
+    codes: list[str]
     method: str = "max_sharpe"
-    period: str = "monthly"           # monthly | quarterly
+    period: str = "monthly"  # monthly | quarterly
     lookback_days: int = TRADING_DAYS
-    commission_rate: float = 0.001    # 单边手续费率
-    start_date: Optional[str] = None  # YYYY-MM-DD
-    end_date: Optional[str] = None
+    commission_rate: float = 0.001  # 单边手续费率
+    start_date: str | None = None  # YYYY-MM-DD
+    end_date: str | None = None
 
 
 @router.post("/rebalance-sim")
@@ -138,5 +136,4 @@ def rebalance_simulation(req: RebalanceSimRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+        raise HTTPException(status_code=500, detail=str(e)) from e

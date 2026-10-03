@@ -6,19 +6,19 @@
 """
 
 from enum import Enum
-from typing import Dict, List, Optional
 
 import numpy as np
 import structlog
 
-from utils.indicators import sma, ema
+from utils.indicators import ema, sma
 
 log = structlog.get_logger(__name__)
 
 
 # ── 状态枚举 ──
 
-class TrendState(str, Enum):
+
+class TrendState(str, Enum):  # noqa: UP042  # 保持 str,Enum：str() 输出 "类名.成员" 格式被现有序列化/前端展示依赖
     STRONG_BULL = "强势多头"
     BULL = "多头趋势"
     WEAK_BULL = "偏多震荡"
@@ -28,7 +28,7 @@ class TrendState(str, Enum):
     STRONG_BEAR = "强势空头"
 
 
-class VolumeState(str, Enum):
+class VolumeState(str, Enum):  # noqa: UP042  # 保持 str,Enum：str() 输出 "类名.成员" 格式被现有序列化/前端展示依赖
     VOL_UP_SURGE = "放量上涨"
     VOL_UP = "温和放量"
     VOL_STABLE = "量能平稳"
@@ -36,7 +36,7 @@ class VolumeState(str, Enum):
     VOL_DOWN_SURGE = "放量下跌"
 
 
-class MacdState(str, Enum):
+class MacdState(str, Enum):  # noqa: UP042  # 保持 str,Enum：str() 输出 "类名.成员" 格式被现有序列化/前端展示依赖
     ABOVE_GOLDEN = "零轴上金叉"
     ABOVE_BULL = "零轴上多头"
     ABOVE_WEAKENING = "零轴上减弱"
@@ -46,7 +46,7 @@ class MacdState(str, Enum):
     BELOW_RECOVERY = "零轴下回升"
 
 
-class RsiState(str, Enum):
+class RsiState(str, Enum):  # noqa: UP042  # 保持 str,Enum：str() 输出 "类名.成员" 格式被现有序列化/前端展示依赖
     OVERBOUGHT = "超买"
     HIGH = "偏强"
     NEUTRAL = "中性"
@@ -54,7 +54,7 @@ class RsiState(str, Enum):
     OVERSOLD = "超卖"
 
 
-class KdjState(str, Enum):
+class KdjState(str, Enum):  # noqa: UP042  # 保持 str,Enum：str() 输出 "类名.成员" 格式被现有序列化/前端展示依赖
     OVERBOUGHT = "超买"
     HIGH = "偏强"
     NEUTRAL = "中性"
@@ -65,16 +65,22 @@ class KdjState(str, Enum):
 # ── 颜色映射（A 股惯例：红涨绿跌，3 级） ──
 
 _TREND_COLOR = {
-    TrendState.STRONG_BULL: "#ef4444", TrendState.BULL: "#ef4444",
-    TrendState.WEAK_BULL: "#ef4444", TrendState.NEUTRAL: "#9ca3af",
-    TrendState.WEAK_BEAR: "#22c55e", TrendState.BEAR: "#22c55e",
+    TrendState.STRONG_BULL: "#ef4444",
+    TrendState.BULL: "#ef4444",
+    TrendState.WEAK_BULL: "#ef4444",
+    TrendState.NEUTRAL: "#9ca3af",
+    TrendState.WEAK_BEAR: "#22c55e",
+    TrendState.BEAR: "#22c55e",
     TrendState.STRONG_BEAR: "#22c55e",
 }
 
 _TREND_LEVEL = {
-    TrendState.STRONG_BULL: 6, TrendState.BULL: 5,
-    TrendState.WEAK_BULL: 4, TrendState.NEUTRAL: 3,
-    TrendState.WEAK_BEAR: 2, TrendState.BEAR: 1,
+    TrendState.STRONG_BULL: 6,
+    TrendState.BULL: 5,
+    TrendState.WEAK_BULL: 4,
+    TrendState.NEUTRAL: 3,
+    TrendState.WEAK_BEAR: 2,
+    TrendState.BEAR: 1,
     TrendState.STRONG_BEAR: 0,
 }
 
@@ -84,7 +90,7 @@ class TechnicalService:
 
     LOOKBACK = 120  # 需要最近 120 个交易日数据
 
-    def diagnose(self, code: str, end_date: str = None) -> Optional[Dict]:
+    def diagnose(self, code: str, end_date: str = None) -> dict | None:
         """单只完整诊断 — 6 维 + 综合评分 + 支撑压力"""
         data = self._load_bars(code, end_date)
         if data is None:
@@ -114,34 +120,41 @@ class TechnicalService:
         composite = self._composite_score(trend, vol_state, macd_state, rsi14, kdj_k)
 
         # 文字摘要
-        parts = [trend.value, ma_info["arrangement"], vol_state.value,
-                 f"MACD{macd_state.value}", f"RSI{rsi_state.value}", f"KDJ{kdj_state.value}"]
+        parts = [
+            trend.value,
+            ma_info["arrangement"],
+            vol_state.value,
+            f"MACD{macd_state.value}",
+            f"RSI{rsi_state.value}",
+            f"KDJ{kdj_state.value}",
+        ]
         if divergence:
             parts.append(divergence)
         summary = "，".join(parts)
 
         return {
-            "code": code, "name": name, "date": str(dates[-1]),
-            "close": round(c, 2), "stale": stale,
+            "code": code,
+            "name": name,
+            "date": str(dates[-1]),
+            "close": round(c, 2),
+            "stale": stale,
             "composite": composite,
-            "trend": {"state": trend.value, "level": _TREND_LEVEL[trend],
-                      "color": _TREND_COLOR[trend]},
+            "trend": {"state": trend.value, "level": _TREND_LEVEL[trend], "color": _TREND_COLOR[trend]},
             "ma": ma_info,
-            "volume": {"state": vol_state.value, "ratio": round(vol_ratio, 2),
-                       "avg20": round(vol_avg20)},
-            "macd": {"state": macd_state.value,
-                     "dif": round(float(dif[-1]), 3),
-                     "dea": round(float(dea[-1]), 3),
-                     "histogram": round(float(hist[-1]), 3)},
-            "rsi": {"state": rsi_state.value,
-                    "rsi6": round(float(rsi6), 1),
-                    "rsi14": round(float(rsi14), 1)},
+            "volume": {"state": vol_state.value, "ratio": round(vol_ratio, 2), "avg20": round(vol_avg20)},
+            "macd": {
+                "state": macd_state.value,
+                "dif": round(float(dif[-1]), 3),
+                "dea": round(float(dea[-1]), 3),
+                "histogram": round(float(hist[-1]), 3),
+            },
+            "rsi": {"state": rsi_state.value, "rsi6": round(float(rsi6), 1), "rsi14": round(float(rsi14), 1)},
             "kdj": {"state": kdj_state.value, "k": round(float(kdj_k), 1)},
             "levels": levels,
             "summary": summary,
         }
 
-    def diagnose_batch(self, codes: List[str]) -> Dict[str, Dict]:
+    def diagnose_batch(self, codes: list[str]) -> dict[str, dict]:
         """批量精简诊断 — 仅返回评分 + 趋势状态（供选股/回测列表）"""
         result = {}
         for code in codes:
@@ -186,17 +199,23 @@ class TechnicalService:
 
         with db_session() as db:
             if stock_codes:
-                from models.quant_data import StockDailyBar as BarModel, StockBasicInfo
+                from models.quant_data import StockBasicInfo
+                from models.quant_data import StockDailyBar as BarModel
+
                 model = BarModel
                 db_code = stock_codes[0]
                 info = db.query(StockBasicInfo.name).filter(StockBasicInfo.code == db_code).scalar()
             elif etf_codes:
-                from models.quant_data import EtfDailyBar as BarModel, EtfBasicInfo
+                from models.quant_data import EtfBasicInfo
+                from models.quant_data import EtfDailyBar as BarModel
+
                 model = BarModel
                 db_code = etf_codes[0]
                 info = db.query(EtfBasicInfo.name).filter(EtfBasicInfo.code == db_code).scalar()
             elif bond_codes:
-                from models.quant_data import ConvertibleBondBar as BarModel, ConvertibleBondBasic
+                from models.quant_data import ConvertibleBondBar as BarModel
+                from models.quant_data import ConvertibleBondBasic
+
                 model = BarModel
                 db_code = bond_codes[0]
                 info = db.query(ConvertibleBondBasic.name).filter(ConvertibleBondBasic.code == db_code).scalar()
@@ -204,9 +223,9 @@ class TechnicalService:
                 return None
 
             name = info or code
-            query = db.query(
-                model.trade_date, model.open, model.high, model.low, model.close, model.volume
-            ).filter(model.code == db_code)
+            query = db.query(model.trade_date, model.open, model.high, model.low, model.close, model.volume).filter(
+                model.code == db_code
+            )
 
             if end_date:
                 query = query.filter(model.trade_date <= end_date)
@@ -232,6 +251,7 @@ class TechnicalService:
         stale = False
         if latest_str:
             from datetime import date as _date
+
             table_latest = _date.fromisoformat(latest_str)
             data_latest = _date.fromisoformat(str(dates[-1]))
             is_historical = end_date and (table_latest - _date.fromisoformat(end_date)).days > 2
@@ -262,7 +282,7 @@ class TechnicalService:
 
     # ── 均线分析 ──
 
-    def _calc_ma_analysis(self, closes, ma5, ma10, ma20, ma60) -> Dict:
+    def _calc_ma_analysis(self, closes, ma5, ma10, ma20, ma60) -> dict:
         c = float(closes[-1])
         m5, m10, m20, m60 = float(ma5[-1]), float(ma10[-1]), float(ma20[-1]), float(ma60[-1])
 
@@ -367,14 +387,13 @@ class TechnicalService:
 
     # ── 支撑/压力 ──
 
-    def _calc_support_resistance(self, close, highs, lows, ma5, ma10, ma20, ma60) -> Dict:
+    def _calc_support_resistance(self, close, highs, lows, ma5, ma10, ma20, ma60) -> dict:
         if close <= 0:
             return {"supports": [], "resistances": []}
         supports, resistances = [], []
 
         for name, val in [("MA5", ma5), ("MA10", ma10), ("MA20", ma20), ("MA60", ma60)]:
-            entry = {"level": round(val, 2), "type": name,
-                     "distance_pct": round(abs(close - val) / close * 100, 2)}
+            entry = {"level": round(val, 2), "type": name, "distance_pct": round(abs(close - val) / close * 100, 2)}
             if val < close:
                 supports.append(entry)
             elif val > close:
@@ -383,11 +402,21 @@ class TechnicalService:
         high_20 = float(np.max(highs[-20:]))
         low_20 = float(np.min(lows[-20:]))
         if high_20 > close:
-            resistances.append({"level": round(high_20, 2), "type": "20日高点",
-                                "distance_pct": round((high_20 - close) / close * 100, 2)})
+            resistances.append(
+                {
+                    "level": round(high_20, 2),
+                    "type": "20日高点",
+                    "distance_pct": round((high_20 - close) / close * 100, 2),
+                }
+            )
         if low_20 < close:
-            supports.append({"level": round(low_20, 2), "type": "20日低点",
-                             "distance_pct": round((close - low_20) / close * 100, 2)})
+            supports.append(
+                {
+                    "level": round(low_20, 2),
+                    "type": "20日低点",
+                    "distance_pct": round((close - low_20) / close * 100, 2),
+                }
+            )
 
         supports.sort(key=lambda x: x["distance_pct"])
         resistances.sort(key=lambda x: x["distance_pct"])
@@ -423,8 +452,8 @@ class TechnicalService:
         for i in range(length):
             if i < n - 1:
                 continue
-            hn = float(np.max(highs[i - n + 1:i + 1]))
-            ln = float(np.min(lows[i - n + 1:i + 1]))
+            hn = float(np.max(highs[i - n + 1 : i + 1]))
+            ln = float(np.min(lows[i - n + 1 : i + 1]))
             c = float(closes[i])
             rsv = 50.0 if hn == ln else (c - ln) / (hn - ln) * 100
             k_prev = (rsv + (m1 - 1) * k_prev) / m1
@@ -445,22 +474,30 @@ class TechnicalService:
 
     # ── 综合评分 ──
 
-    def _composite_score(self, trend, volume, macd_state, rsi_val, kdj_k=50.0) -> Dict:
+    def _composite_score(self, trend, volume, macd_state, rsi_val, kdj_k=50.0) -> dict:
         TREND_SCORES = {
-            TrendState.STRONG_BULL: 100, TrendState.BULL: 80,
-            TrendState.WEAK_BULL: 60, TrendState.NEUTRAL: 50,
-            TrendState.WEAK_BEAR: 40, TrendState.BEAR: 20,
+            TrendState.STRONG_BULL: 100,
+            TrendState.BULL: 80,
+            TrendState.WEAK_BULL: 60,
+            TrendState.NEUTRAL: 50,
+            TrendState.WEAK_BEAR: 40,
+            TrendState.BEAR: 20,
             TrendState.STRONG_BEAR: 0,
         }
         VOLUME_SCORES = {
-            VolumeState.VOL_UP_SURGE: 90, VolumeState.VOL_UP: 70,
-            VolumeState.VOL_STABLE: 50, VolumeState.VOL_DOWN_SHRINK: 35,
+            VolumeState.VOL_UP_SURGE: 90,
+            VolumeState.VOL_UP: 70,
+            VolumeState.VOL_STABLE: 50,
+            VolumeState.VOL_DOWN_SHRINK: 35,
             VolumeState.VOL_DOWN_SURGE: 10,
         }
         MACD_SCORES = {
-            MacdState.ABOVE_GOLDEN: 100, MacdState.ABOVE_BULL: 80,
-            MacdState.ABOVE_WEAKENING: 55, MacdState.CROSS_DOWN: 40,
-            MacdState.BELOW_RECOVERY: 45, MacdState.BELOW_BEAR: 20,
+            MacdState.ABOVE_GOLDEN: 100,
+            MacdState.ABOVE_BULL: 80,
+            MacdState.ABOVE_WEAKENING: 55,
+            MacdState.CROSS_DOWN: 40,
+            MacdState.BELOW_RECOVERY: 45,
+            MacdState.BELOW_BEAR: 20,
             MacdState.BELOW_DEATH: 0,
         }
         rsi_score = min(100.0, max(0.0, rsi_val))
@@ -482,4 +519,3 @@ class TechnicalService:
             label = "弱势"
 
         return {"score": round(score), "label": label}
-

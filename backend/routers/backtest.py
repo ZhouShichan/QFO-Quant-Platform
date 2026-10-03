@@ -5,19 +5,19 @@
 """
 
 import json
+from typing import Any
+
 import numpy as np
 import structlog
-
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
 from core.database import get_db
 from models import all_models
-from services.stock_service import StockService
 from services.backtest_service import BacktestService
-from utils.task_store import task_store, TaskStatus
+from services.stock_service import StockService
+from utils.task_store import TaskStatus, task_store
 
 router = APIRouter(prefix="/backtest", tags=["Backtest"])
 
@@ -28,22 +28,24 @@ _backtest = BacktestService(_stock)
 
 from utils.json_utils import sanitize as _sanitize
 
-
 # ── 请求模型 ──
 
+
 class BacktestRequest(BaseModel):
-    codes: Optional[List[str]] = Field(None, description="固定标的池（与 universe_config 二选一）")
+    codes: list[str] | None = Field(None, description="固定标的池（与 universe_config 二选一）")
     strategy_type: str = Field("multifactor", description="策略类型")
-    start_date: Optional[str] = Field(None, description="开始日期")
-    end_date: Optional[str] = Field(None, description="结束日期")
+    start_date: str | None = Field(None, description="开始日期")
+    end_date: str | None = Field(None, description="结束日期")
     initial_cash: float = Field(1000000, description="初始资金")
     commission: float = Field(0.0003, description="手续费率")
-    selected_factors: Optional[Dict[str, bool]] = Field(None, description="选中的因子")
+    selected_factors: dict[str, bool] | None = Field(None, description="选中的因子")
     rebalance_period: str = Field("monthly", description="调仓周期")
-    strategy_params: Optional[Dict[str, Any]] = Field(None, description="策略参数")
-    universe_config: Optional[Dict[str, Any]] = Field(None, description="动态标的池配置")
+    strategy_params: dict[str, Any] | None = Field(None, description="策略参数")
+    universe_config: dict[str, Any] | None = Field(None, description="动态标的池配置")
+
 
 # ── 参数统一抽取（同步/异步路由共用） ──
+
 
 def _validate_request(request: BacktestRequest):
     """前置校验：codes 和 universe_config 至少有一个"""
@@ -53,26 +55,29 @@ def _validate_request(request: BacktestRequest):
 
 def _build_backtest_kwargs(request: BacktestRequest) -> dict:
     """从 Request 构建 run_backtest 参数字典（唯一来源）"""
-    return dict(
-        stock_codes=request.codes,
-        strategy_type=request.strategy_type,
-        start_date=request.start_date,
-        end_date=request.end_date,
-        initial_cash=request.initial_cash,
-        commission=request.commission,
-        selected_factors=request.selected_factors,
-        rebalance_period=request.rebalance_period,
-        strategy_params=request.strategy_params,
-        universe_config=request.universe_config,
-    )
+    return {
+        "stock_codes": request.codes,
+        "strategy_type": request.strategy_type,
+        "start_date": request.start_date,
+        "end_date": request.end_date,
+        "initial_cash": request.initial_cash,
+        "commission": request.commission,
+        "selected_factors": request.selected_factors,
+        "rebalance_period": request.rebalance_period,
+        "strategy_params": request.strategy_params,
+        "universe_config": request.universe_config,
+    }
+
 
 # ── 标的池预览（回测前预估） ──
+
 
 @router.post("/preview_universe")
 async def preview_universe(request: BacktestRequest):
     """回测前预估标的数量和复杂度，帮助用户决定是否继续"""
-    from services.universe_provider import create_provider
     import datetime
+
+    from services.universe_provider import create_provider
 
     start = request.start_date or (datetime.date.today() - datetime.timedelta(days=365)).isoformat()
     end = request.end_date or datetime.date.today().isoformat()
@@ -91,6 +96,7 @@ async def preview_universe(request: BacktestRequest):
 
     # 粗估耗时（基于经验值：~0.5s/100只/年）
     import math
+
     max_stocks = (request.universe_config or {}).get("max_stocks", 500)
     actual_count = min(count, max_stocks)
     years = max((datetime.date.fromisoformat(end) - datetime.date.fromisoformat(start)).days / 365, 0.1)
@@ -106,28 +112,27 @@ async def preview_universe(request: BacktestRequest):
     }
 
 
-
 @router.post("/run")
 async def run_backtest(request: BacktestRequest):
     _validate_request(request)
     import asyncio
+
     loop = asyncio.get_running_loop()
     try:
-        results = await loop.run_in_executor(
-            None, lambda: _backtest.run_backtest(**_build_backtest_kwargs(request))
-        )
+        results = await loop.run_in_executor(None, lambda: _backtest.run_backtest(**_build_backtest_kwargs(request)))
         return results
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 # ── 策略对比 ──
 
+
 class CompareRequest(BaseModel):
-    codes: List[str] = Field(..., description="股票代码列表")
-    strategies: List[str] = Field(..., description="策略类型列表")
-    start_date: Optional[str] = Field(None)
-    end_date: Optional[str] = Field(None)
+    codes: list[str] = Field(..., description="股票代码列表")
+    strategies: list[str] = Field(..., description="策略类型列表")
+    start_date: str | None = Field(None)
+    end_date: str | None = Field(None)
     initial_cash: float = Field(1000000)
     commission: float = Field(0.0003)
     rebalance_period: str = Field("monthly")
@@ -151,38 +156,41 @@ async def compare_strategies(request: CompareRequest):
                 commission=request.commission,
                 rebalance_period=request.rebalance_period,
             )
-            return st, _sanitize({
-                "total_return": res.get("total_return"),
-                "annual_return": res.get("annual_return"),
-                "max_drawdown": res.get("max_drawdown"),
-                "sharpe_ratio": res.get("sharpe_ratio"),
-                "sortino_ratio": res.get("sortino_ratio"),
-                "volatility": res.get("volatility"),
-                "win_rate": res.get("win_rate"),
-                "excess_return": res.get("excess_return"),
-                "cumReturns": res.get("cumReturns"),
-                "dates": res.get("dates"),
-                "benchmark": res.get("benchmark"),
-            })
+            return st, _sanitize(
+                {
+                    "total_return": res.get("total_return"),
+                    "annual_return": res.get("annual_return"),
+                    "max_drawdown": res.get("max_drawdown"),
+                    "sharpe_ratio": res.get("sharpe_ratio"),
+                    "sortino_ratio": res.get("sortino_ratio"),
+                    "volatility": res.get("volatility"),
+                    "win_rate": res.get("win_rate"),
+                    "excess_return": res.get("excess_return"),
+                    "cumReturns": res.get("cumReturns"),
+                    "dates": res.get("dates"),
+                    "benchmark": res.get("benchmark"),
+                }
+            )
         except Exception as e:
             _log.warning("compare_strategy_failed", strategy=st, error=str(e))
             return st, {"error": str(e)}
 
     tasks = [loop.run_in_executor(None, _run_one, st) for st in request.strategies]
     pairs = await asyncio.gather(*tasks)
-    results = {st: data for st, data in pairs}
+    results = dict(pairs)
 
     return {"strategies": results, "codes": request.codes}
 
 
 # ── 参数优化（网格搜索） ──
 
+
 class OptimizeRequest(BaseModel):
-    codes: List[str] = Field(..., description="股票代码列表")
+    codes: list[str] = Field(..., description="股票代码列表")
     strategy_type: str = Field(..., description="策略类型")
-    param_ranges: Dict[str, List] = Field(..., description="参数范围 {name: [v1, v2, ...]}")
-    start_date: Optional[str] = Field(None)
-    end_date: Optional[str] = Field(None)
+    param_ranges: dict[str, list] = Field(..., description="参数范围 {name: [v1, v2, ...]}")
+    start_date: str | None = Field(None)
+    end_date: str | None = Field(None)
     initial_cash: float = Field(1000000)
     commission: float = Field(0.0003)
     rebalance_period: str = Field("monthly")
@@ -192,8 +200,8 @@ class OptimizeRequest(BaseModel):
 @router.post("/optimize")
 async def optimize_parameters(request: OptimizeRequest):
     """网格搜索最优参数组合"""
-    import itertools
     import asyncio
+    import itertools
 
     param_names = list(request.param_ranges.keys())
     param_values = list(request.param_ranges.values())
@@ -206,7 +214,7 @@ async def optimize_parameters(request: OptimizeRequest):
     loop = asyncio.get_running_loop()
 
     def _run_one(combo):
-        params = dict(zip(param_names, combo))
+        params = dict(zip(param_names, combo, strict=False))
         try:
             res = _backtest.run_backtest(
                 stock_codes=request.codes,
@@ -244,11 +252,12 @@ async def optimize_parameters(request: OptimizeRequest):
         "strategy_type": request.strategy_type,
         "total_combos": len(combos),
         "valid_results": len(results),
-        "top": results[:request.top_n],
+        "top": results[: request.top_n],
     }
 
 
 # ── 异步回测任务包装器 ──
+
 
 def _run_backtest_wrapper(task_id: str, request: BacktestRequest):
     """回测任务包装器（含结果持久化）"""
@@ -286,6 +295,7 @@ def _run_backtest_wrapper(task_id: str, request: BacktestRequest):
 
 # ── 异步回测 ──
 
+
 @router.post("/run_async")
 async def run_backtest_async(
     request: BacktestRequest,
@@ -295,13 +305,14 @@ async def run_backtest_async(
     # 去重：检查是否已有 backtest 任务在运行
     existing = task_store.get_running_task("backtest")
     if existing:
-        raise HTTPException(status_code=409, detail=f"已有回测任务在运行，请等待完成后再提交")
+        raise HTTPException(status_code=409, detail="已有回测任务在运行，请等待完成后再提交")
     task_id = task_store.create_task("backtest")
     background_tasks.add_task(_run_backtest_wrapper, task_id, request)
     return {"task_id": task_id, "status": "pending"}
 
 
 # ── 任务状态 ──
+
 
 @router.get("/status/{task_id}")
 async def get_backtest_status(task_id: str):
@@ -313,14 +324,10 @@ async def get_backtest_status(task_id: str):
 
 # ── 历史记录 ──
 
+
 @router.get("/list")
 async def list_backtest_results(limit: int = 50, db: Session = Depends(get_db)):
-    rows = (
-        db.query(all_models.BacktestResult)
-        .order_by(all_models.BacktestResult.created_at.desc())
-        .limit(limit)
-        .all()
-    )
+    rows = db.query(all_models.BacktestResult).order_by(all_models.BacktestResult.created_at.desc()).limit(limit).all()
     results = []
     for r in rows:
         # 构建摘要标签：帮助区分同策略的不同回测
@@ -332,23 +339,26 @@ async def list_backtest_results(limit: int = 50, db: Session = Depends(get_db)):
             except (json.JSONDecodeError, TypeError):
                 pass
         if uc:
-            uc_type = uc.get('type', '')
-            if uc_type == 'full_market':
+            uc_type = uc.get("type", "")
+            if uc_type == "full_market":
                 summary_parts.append(f"全市场·{uc.get('max_stocks', '?')}只")
-            elif uc_type == 'factor_filter':
-                filters = uc.get('filters', {})
+            elif uc_type == "factor_filter":
+                filters = uc.get("filters", {})
                 tags = []
-                if 'pe_ttm_max' in filters: tags.append(f"PE≤{filters['pe_ttm_max']}")
-                if 'pb_max' in filters: tags.append(f"PB≤{filters['pb_max']}")
-                if 'total_mv_min' in filters:
-                    mv = filters['total_mv_min']
-                    tags.append(f"市值≥{mv/10000:.0f}亿" if mv >= 10000 else f"市值≥{mv}万")
-                if 'dv_ratio_min' in filters: tags.append(f"股息≥{filters['dv_ratio_min']}%")
-                summary_parts.append('·'.join(tags[:3]) if tags else '因子筛选')
+                if "pe_ttm_max" in filters:
+                    tags.append(f"PE≤{filters['pe_ttm_max']}")
+                if "pb_max" in filters:
+                    tags.append(f"PB≤{filters['pb_max']}")
+                if "total_mv_min" in filters:
+                    mv = filters["total_mv_min"]
+                    tags.append(f"市值≥{mv / 10000:.0f}亿" if mv >= 10000 else f"市值≥{mv}万")
+                if "dv_ratio_min" in filters:
+                    tags.append(f"股息≥{filters['dv_ratio_min']}%")
+                summary_parts.append("·".join(tags[:3]) if tags else "因子筛选")
         else:
             # 固定池：显示标的数
             try:
-                codes = json.loads(r.codes or '[]')
+                codes = json.loads(r.codes or "[]")
                 summary_parts.append(f"{len(codes)}只标的")
             except (json.JSONDecodeError, TypeError):
                 pass
@@ -356,62 +366,79 @@ async def list_backtest_results(limit: int = 50, db: Session = Depends(get_db)):
         # 从 result_json 提取策略参数摘要（覆盖所有内置策略的关键区分参数）
         try:
             rj = json.loads(r.result_json) if r.result_json else {}
-            sp = rj.get('strategy_params', {})
+            sp = rj.get("strategy_params", {})
             # 模式（均线/MACD/因子选股等双模式策略）
             MODE_LABELS = {
-                'crossover': '金叉', 'pullback': '回踩',
-                'macd': 'MACD', 'rsi': 'RSI',
-                'composite': '复合', 'value_only': '纯估值',
+                "crossover": "金叉",
+                "pullback": "回踩",
+                "macd": "MACD",
+                "rsi": "RSI",
+                "composite": "复合",
+                "value_only": "纯估值",
             }
-            if sp.get('mode'): summary_parts.append(MODE_LABELS.get(sp['mode'], sp['mode']))
+            if sp.get("mode"):
+                summary_parts.append(MODE_LABELS.get(sp["mode"], sp["mode"]))
             # 事件驱动：事件类型 + 方向
-            if sp.get('event_type'): summary_parts.append(sp['event_type'])
-            DIR_LABELS = {'positive': '利好', 'negative': '利空', 'both': '不限'}
-            if sp.get('direction'): summary_parts.append(DIR_LABELS.get(sp['direction'], sp['direction']))
-            if sp.get('hold_days'): summary_parts.append(f"持{sp['hold_days']}日")
+            if sp.get("event_type"):
+                summary_parts.append(sp["event_type"])
+            DIR_LABELS = {"positive": "利好", "negative": "利空", "both": "不限"}
+            if sp.get("direction"):
+                summary_parts.append(DIR_LABELS.get(sp["direction"], sp["direction"]))
+            if sp.get("hold_days"):
+                summary_parts.append(f"持{sp['hold_days']}日")
             # 持仓/调仓
-            if sp.get('top_n'): summary_parts.append(f"Top{sp['top_n']}")
-            REB_LABELS = {'monthly': '月', 'weekly': '周', 'daily': '日', 'quarterly': '季'}
-            if sp.get('rebalance'): summary_parts.append(REB_LABELS.get(sp['rebalance'], sp['rebalance']))
+            if sp.get("top_n"):
+                summary_parts.append(f"Top{sp['top_n']}")
+            REB_LABELS = {"monthly": "月", "weekly": "周", "daily": "日", "quarterly": "季"}
+            if sp.get("rebalance"):
+                summary_parts.append(REB_LABELS.get(sp["rebalance"], sp["rebalance"]))
             # 均线/周期参数
-            if sp.get('fast_ma') and sp.get('slow_ma'): summary_parts.append(f"MA{sp['fast_ma']}/{sp['slow_ma']}")
-            if sp.get('lookback_days'): summary_parts.append(f"回看{sp['lookback_days']}日")
+            if sp.get("fast_ma") and sp.get("slow_ma"):
+                summary_parts.append(f"MA{sp['fast_ma']}/{sp['slow_ma']}")
+            if sp.get("lookback_days"):
+                summary_parts.append(f"回看{sp['lookback_days']}日")
             # 网格
-            if sp.get('grid_pct'): summary_parts.append(f"网格{sp['grid_pct']}%")
+            if sp.get("grid_pct"):
+                summary_parts.append(f"网格{sp['grid_pct']}%")
             # 海龟
-            if sp.get('entry') and sp.get('exit'): summary_parts.append(f"通道{sp['entry']}/{sp['exit']}")
+            if sp.get("entry") and sp.get("exit"):
+                summary_parts.append(f"通道{sp['entry']}/{sp['exit']}")
             # 布林带
-            if sp.get('window') and sp.get('num_std'): summary_parts.append(f"BB{sp['window']}·{sp['num_std']}σ")
+            if sp.get("window") and sp.get("num_std"):
+                summary_parts.append(f"BB{sp['window']}·{sp['num_std']}σ")
             # 放量
-            if sp.get('vol_ratio'): summary_parts.append(f"量比{sp['vol_ratio']}")
+            if sp.get("vol_ratio"):
+                summary_parts.append(f"量比{sp['vol_ratio']}")
         except (json.JSONDecodeError, TypeError, AttributeError):
             pass
 
-        results.append({
-            "id": r.id,
-            "task_id": r.task_id,
-            "strategy_type": r.strategy_type,
-            "codes": r.codes,
-            "start_date": r.start_date,
-            "end_date": r.end_date,
-            "total_return": r.total_return,
-            "annual_return": r.annual_return,
-            "max_drawdown": r.max_drawdown,
-            "sharpe_ratio": r.sharpe_ratio,
-            "has_universe": bool(r.universe_config),
-            "summary": ' · '.join(summary_parts) if summary_parts else None,
-            "created_at": str(r.created_at)[:19] if r.created_at else None,
-        })
+        results.append(
+            {
+                "id": r.id,
+                "task_id": r.task_id,
+                "strategy_type": r.strategy_type,
+                "codes": r.codes,
+                "start_date": r.start_date,
+                "end_date": r.end_date,
+                "total_return": r.total_return,
+                "annual_return": r.annual_return,
+                "max_drawdown": r.max_drawdown,
+                "sharpe_ratio": r.sharpe_ratio,
+                "has_universe": bool(r.universe_config),
+                "summary": " · ".join(summary_parts) if summary_parts else None,
+                "created_at": str(r.created_at)[:19] if r.created_at else None,
+            }
+        )
     return results
 
+
 # ── 详情（完整结果回放） ──
+
 
 @router.get("/{result_id}/detail")
 async def get_backtest_detail(result_id: int, db: Session = Depends(get_db)):
     """返回完整回测结果，供前端回放历史记录"""
-    row = db.query(all_models.BacktestResult).filter(
-        all_models.BacktestResult.id == result_id
-    ).first()
+    row = db.query(all_models.BacktestResult).filter(all_models.BacktestResult.id == result_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="回测记录不存在")
 
@@ -453,11 +480,10 @@ async def get_backtest_detail(result_id: int, db: Session = Depends(get_db)):
 
 # ── 删除记录 ──
 
+
 @router.delete("/{result_id}")
 async def delete_backtest_result(result_id: int, db: Session = Depends(get_db)):
-    row = db.query(all_models.BacktestResult).filter(
-        all_models.BacktestResult.id == result_id
-    ).first()
+    row = db.query(all_models.BacktestResult).filter(all_models.BacktestResult.id == result_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="回测记录不存在")
     db.delete(row)
@@ -465,13 +491,15 @@ async def delete_backtest_result(result_id: int, db: Session = Depends(get_db)):
 
 
 class BatchDeleteRequest(BaseModel):
-    ids: List[int] = Field(..., min_length=1, max_length=200, description="要删除的回测记录 ID 列表")
+    ids: list[int] = Field(..., min_length=1, max_length=200, description="要删除的回测记录 ID 列表")
 
 
 @router.post("/batch_delete")
 async def batch_delete_backtest_results(request: BatchDeleteRequest, db: Session = Depends(get_db)):
     """批量删除回测记录"""
-    deleted = db.query(all_models.BacktestResult).filter(
-        all_models.BacktestResult.id.in_(request.ids)
-    ).delete(synchronize_session=False)
+    deleted = (
+        db.query(all_models.BacktestResult)
+        .filter(all_models.BacktestResult.id.in_(request.ids))
+        .delete(synchronize_session=False)
+    )
     return {"status": "deleted", "deleted_count": deleted}

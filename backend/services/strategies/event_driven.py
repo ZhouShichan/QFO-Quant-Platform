@@ -1,6 +1,7 @@
 """事件驱动择时策略 — 基于新闻事件信号买入，持仓 N 天后卖出"""
 
 import numpy as np
+
 from services.strategies.base import BaseStrategy, StrategyParam
 
 
@@ -14,16 +15,27 @@ class EventDrivenStrategy(BaseStrategy):
 
     def params_schema(self):
         return [
-            StrategyParam("event_type", "事件类型", "select", "业绩",
-                          options=[{"value": et, "label": et}
-                                   for et in ["业绩", "资金", "分红", "重组", "诉讼", "人事",
-                                              "大宗交易", "解禁", "龙虎榜"]]),
-            StrategyParam("direction", "事件方向", "select", "positive",
-                          options=[
-                              {"value": "positive", "label": "利好事件"},
-                              {"value": "negative", "label": "利空事件"},
-                              {"value": "both", "label": "不限"},
-                          ]),
+            StrategyParam(
+                "event_type",
+                "事件类型",
+                "select",
+                "业绩",
+                options=[
+                    {"value": et, "label": et}
+                    for et in ["业绩", "资金", "分红", "重组", "诉讼", "人事", "大宗交易", "解禁", "龙虎榜"]
+                ],
+            ),
+            StrategyParam(
+                "direction",
+                "事件方向",
+                "select",
+                "positive",
+                options=[
+                    {"value": "positive", "label": "利好事件"},
+                    {"value": "negative", "label": "利空事件"},
+                    {"value": "both", "label": "不限"},
+                ],
+            ),
             StrategyParam("hold_days", "持仓天数", "int", 5, min=1, max=20, step=1),
             StrategyParam("min_score", "最低情绪分", "float", 0.3, min=0.1, max=0.9, step=0.1),
         ]

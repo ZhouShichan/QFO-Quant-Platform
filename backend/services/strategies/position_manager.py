@@ -8,15 +8,19 @@
 """
 
 import numpy as np
-from typing import Dict, List
 
 
 class PositionManager:
     """信号/因子 → 持仓权重"""
 
-    def __init__(self, commission: float = 0.0003, stamp_tax: float = 0.001,
-                 slippage: float = 0.001,
-                 limit_up: float = 0.095, limit_down: float = -0.095):
+    def __init__(
+        self,
+        commission: float = 0.0003,
+        stamp_tax: float = 0.001,
+        slippage: float = 0.001,
+        limit_up: float = 0.095,
+        limit_down: float = -0.095,
+    ):
         self.commission = commission
         self.stamp_tax = stamp_tax
         self.slippage = slippage
@@ -24,7 +28,9 @@ class PositionManager:
         self.limit_down = limit_down
 
     def signals_to_weights_daily(
-        self, signals: np.ndarray, holding: np.ndarray,
+        self,
+        signals: np.ndarray,
+        holding: np.ndarray,
         allow_reentry: bool = False,
     ) -> tuple[np.ndarray, bool]:
         """
@@ -58,8 +64,8 @@ class PositionManager:
 
     def factor_to_weights(
         self,
-        codes: List[str],
-        factor_scores: Dict[str, float],
+        codes: list[str],
+        factor_scores: dict[str, float],
         top_n: int,
         strategy_type: str,
         as_of_date: str = None,
@@ -100,10 +106,7 @@ class PositionManager:
 
         return w
 
-    def apply_limits(
-        self, weights: np.ndarray, current_weights: np.ndarray,
-        day_returns: np.ndarray
-    ) -> np.ndarray:
+    def apply_limits(self, weights: np.ndarray, current_weights: np.ndarray, day_returns: np.ndarray) -> np.ndarray:
         """涨跌停过滤 + 归一化"""
         n = len(weights)
         for idx in range(n):
@@ -123,9 +126,11 @@ class PositionManager:
         sell_turnover = np.sum(np.maximum(current_weights - new_weights, 0))
         buy_turnover = np.sum(np.maximum(new_weights - current_weights, 0))
         total_turnover = buy_turnover + sell_turnover
-        return (buy_turnover * self.commission
-                + sell_turnover * (self.commission + self.stamp_tax)
-                + total_turnover * self.slippage)
+        return (
+            buy_turnover * self.commission
+            + sell_turnover * (self.commission + self.stamp_tax)
+            + total_turnover * self.slippage
+        )
 
     @staticmethod
     def _apply_weight_cap(weights: np.ndarray, max_weight: float = 0.30) -> np.ndarray:
@@ -163,9 +168,9 @@ class PositionManager:
         return w
 
     @staticmethod
-    def _double_low_weights(codes: List[str], as_of_date: str = None) -> np.ndarray:
+    def _double_low_weights(codes: list[str], as_of_date: str = None) -> np.ndarray:
         """从 ConvertibleBondFactor 表读双低分，倒数加权
-        
+
         as_of_date: 截止日期，避免使用未来数据。None 时取最新。
         """
         n = len(codes)
@@ -176,6 +181,7 @@ class PositionManager:
 
             with db_session() as db:
                 from sqlalchemy import func
+
                 q = db.query(func.max(CBF.trade_date))
                 if as_of_date:
                     q = q.filter(CBF.trade_date <= as_of_date)
@@ -183,11 +189,15 @@ class PositionManager:
                 if not latest:
                     return np.ones(n) / n
 
-                rows = db.query(CBF.code, CBF.double_low_score).filter(
-                    CBF.trade_date == latest,
-                    CBF.code.in_(codes),
-                    CBF.double_low_score.isnot(None),
-                ).all()
+                rows = (
+                    db.query(CBF.code, CBF.double_low_score)
+                    .filter(
+                        CBF.trade_date == latest,
+                        CBF.code.in_(codes),
+                        CBF.double_low_score.isnot(None),
+                    )
+                    .all()
+                )
 
                 score_map = {r.code: float(r.double_low_score) for r in rows}
                 for i, c in enumerate(codes):

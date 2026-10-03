@@ -5,13 +5,13 @@
 - 上下文管理器 db_session() 替代手动 try/finally/close
 """
 
-from contextlib import contextmanager
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker, declarative_base
-
 # ---------- 引擎 ----------
-
 import os as _os
+from contextlib import contextmanager
+
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import declarative_base, sessionmaker
+
 _BACKEND_DIR = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{_os.path.join(_BACKEND_DIR, 'quant_data.db')}"
 
@@ -28,12 +28,12 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA page_size=16384")          # 16KB 页：减少 B-tree 深度，加速大范围扫描
-    cursor.execute("PRAGMA cache_size=-64000")         # 64 MB 页面缓存
+    cursor.execute("PRAGMA page_size=16384")  # 16KB 页：减少 B-tree 深度，加速大范围扫描
+    cursor.execute("PRAGMA cache_size=-64000")  # 64 MB 页面缓存
     cursor.execute("PRAGMA journal_size_limit=67108864")  # WAL 文件上限 64 MB
-    cursor.execute("PRAGMA busy_timeout=30000")        # 锁等待 30 秒
-    cursor.execute("PRAGMA mmap_size=2147483648")      # 2 GB 内存映射，避免 read() 系统调用
-    cursor.execute("PRAGMA temp_store=MEMORY")         # 临时表/排序在内存完成
+    cursor.execute("PRAGMA busy_timeout=30000")  # 锁等待 30 秒
+    cursor.execute("PRAGMA mmap_size=2147483648")  # 2 GB 内存映射，避免 read() 系统调用
+    cursor.execute("PRAGMA temp_store=MEMORY")  # 临时表/排序在内存完成
     cursor.close()
 
 
@@ -45,22 +45,23 @@ def _auto_vacuum_if_needed():
     因此使用原生 sqlite3 连接，绕过 SQLAlchemy 的 connect 事件（那里会设 WAL）。
     """
     import os
+
     db_path = SQLALCHEMY_DATABASE_URL.replace("sqlite:///", "")
     if not os.path.exists(db_path):
         return  # 新 DB，create_all 时自动用新 page_size
 
     try:
         import sqlite3
+
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         cur.execute("PRAGMA page_size")
         current = cur.fetchone()[0]
         if current != 16384:
             import structlog
+
             log = structlog.get_logger("database")
-            log.info("auto_vacuum_start",
-                     current_page_size=current, target=16384,
-                     hint="一次性操作，1.6GB 约需2-5分钟")
+            log.info("auto_vacuum_start", current_page_size=current, target=16384, hint="一次性操作，1.6GB 约需2-5分钟")
             # 必须先退出 WAL 模式才能改 page_size
             cur.execute("PRAGMA journal_mode=DELETE")
             cur.execute("PRAGMA page_size=16384")
@@ -72,9 +73,12 @@ def _auto_vacuum_if_needed():
         conn.close()
     except Exception as e:
         import structlog
+
         structlog.get_logger("database").warning(
-            "auto_vacuum_failed", error=str(e),
-            hint="可手动执行: PRAGMA journal_mode=DELETE; PRAGMA page_size=16384; VACUUM; PRAGMA journal_mode=WAL;")
+            "auto_vacuum_failed",
+            error=str(e),
+            hint="可手动执行: PRAGMA journal_mode=DELETE; PRAGMA page_size=16384; VACUUM; PRAGMA journal_mode=WAL;",
+        )
 
 
 _auto_vacuum_if_needed()
@@ -88,6 +92,7 @@ Base = declarative_base()
 
 
 # ---------- 上下文管理器 ----------
+
 
 @contextmanager
 def db_session():
@@ -132,6 +137,7 @@ def _migrate_table(table_name: str, new_cols: dict):
     - 列缺失   → ALTER TABLE ADD COLUMN
     """
     import structlog as _sl
+
     _log = _sl.get_logger("db_migrate")
     try:
         with engine.connect() as conn:
@@ -144,9 +150,7 @@ def _migrate_table(table_name: str, new_cols: dict):
             added = []
             for col, col_type in new_cols.items():
                 if col not in existing:
-                    conn.execute(sa_text(
-                        f"ALTER TABLE {table_name} ADD COLUMN {col} {col_type}"
-                    ))
+                    conn.execute(sa_text(f"ALTER TABLE {table_name} ADD COLUMN {col} {col_type}"))
                     added.append(col)
             if added:
                 _log.info(f"{table_name}_migrated", added=added)
@@ -156,23 +160,37 @@ def _migrate_table(table_name: str, new_cols: dict):
 
 def migrate_backtest_results():
     """安全补全 backtest_results 表中新增的列（幂等）"""
-    _migrate_table("backtest_results", {
-        "task_id": "TEXT", "strategy_type": "TEXT", "codes": "TEXT",
-        "start_date": "TEXT", "end_date": "TEXT",
-        "win_rate": "REAL", "result_json": "TEXT",
-    })
+    _migrate_table(
+        "backtest_results",
+        {
+            "task_id": "TEXT",
+            "strategy_type": "TEXT",
+            "codes": "TEXT",
+            "start_date": "TEXT",
+            "end_date": "TEXT",
+            "win_rate": "REAL",
+            "result_json": "TEXT",
+        },
+    )
 
 
 def migrate_stock_news():
     """安全补全 stock_news 表中 NLP 新增列（幂等）"""
-    _migrate_table("stock_news", {
-        "event_type": "TEXT", "nlp_reason": "TEXT",
-    })
+    _migrate_table(
+        "stock_news",
+        {
+            "event_type": "TEXT",
+            "nlp_reason": "TEXT",
+        },
+    )
 
 
 def migrate_financial_columns():
     """安全补全 stock_financials 表中质量因子新增列（幂等）"""
-    _migrate_table("stock_financials", {
-        "cashflow_oper": "REAL", "debt_to_assets": "REAL",
-    })
-
+    _migrate_table(
+        "stock_financials",
+        {
+            "cashflow_oper": "REAL",
+            "debt_to_assets": "REAL",
+        },
+    )

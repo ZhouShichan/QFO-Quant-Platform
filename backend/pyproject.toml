@@ -73,7 +73,11 @@ select = [
     "UP", # pyupgrade
 ]
 ignore = [
-    "E501", # 行宽由 line-length 控制，历史代码暂不强制
+    "E501",  # 行宽由 line-length 控制，历史代码暂不强制
+    "E402",  # 存量模块存在日志初始化后 import / 文档后置等结构，历史代码暂不强制
+    "B008",  # FastAPI 的 Query(...)/Depends(...) 默认参数惯用法
+    "E711",  # SQLAlchemy 列比较 `== None` 惯用法，改写 .is_(None) 有 NULL 语义差异风险
+    "E712",  # SQLAlchemy 列比较 `== True` 惯用法，改写 .is_(True) 有 NULL 语义差异风险
 ]
 
 # 类型检查：待代码完成类型注解后取消注释并启用 dev 组中的 mypy

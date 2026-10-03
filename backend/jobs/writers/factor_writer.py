@@ -4,9 +4,10 @@
 批量 Upsert StockDailyFactor。
 """
 
-import structlog
-import pandas as pd
 from datetime import date as date_type
+
+import pandas as pd
+import structlog
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -18,9 +19,20 @@ class FactorWriter:
 
     # 因子表所有可能的列
     _ALL_FACTOR_COLS = [
-        "code", "trade_date", "turnover_rate", "turnover_rate_f",
-        "volume_ratio", "pe", "pe_ttm", "pb", "ps", "ps_ttm",
-        "dv_ratio", "dv_ttm", "total_mv", "circ_mv",
+        "code",
+        "trade_date",
+        "turnover_rate",
+        "turnover_rate_f",
+        "volume_ratio",
+        "pe",
+        "pe_ttm",
+        "pb",
+        "ps",
+        "ps_ttm",
+        "dv_ratio",
+        "dv_ttm",
+        "total_mv",
+        "circ_mv",
     ]
 
     # ---------- 按交易日全市场批量写入 ----------
@@ -47,8 +59,7 @@ class FactorWriter:
 
     # ---------- 按股票写入（fallback） ----------
 
-    def upsert_single(self, db: Session, code: str, df_factors: pd.DataFrame,
-                      start_date: str, end_date: str):
+    def upsert_single(self, db: Session, code: str, df_factors: pd.DataFrame, start_date: str, end_date: str):
         """写入单只股票的因子数据"""
         if df_factors is None or df_factors.empty:
             return

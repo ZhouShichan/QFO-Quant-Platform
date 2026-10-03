@@ -14,9 +14,11 @@
 
 注: 前端镜像逻辑位于 StrategyBacktestPanel.jsx 的标的来源选择器
 """
-import structlog
+
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import Any
+
+import structlog
 
 log = structlog.get_logger(__name__)
 
@@ -25,7 +27,7 @@ class UniverseProvider(ABC):
     """标的池提供者基类"""
 
     @abstractmethod
-    def get_codes(self, date: str) -> List[str]:
+    def get_codes(self, date: str) -> list[str]:
         """返回指定日期的标的列表"""
         ...
 
@@ -33,10 +35,10 @@ class UniverseProvider(ABC):
 class CustomPoolUniverse(UniverseProvider):
     """固定池：直接使用传入的 codes，向后兼容"""
 
-    def __init__(self, codes: List[str]):
+    def __init__(self, codes: list[str]):
         self.codes = codes
 
-    def get_codes(self, date: str) -> List[str]:
+    def get_codes(self, date: str) -> list[str]:
         return self.codes
 
 
@@ -56,33 +58,32 @@ class FactorFilterUniverse(UniverseProvider):
 
     # 因子字段 → (StockDailyFactor 列名, 比较方向)
     _FILTER_MAP = {
-        "pe_ttm_max":   ("pe_ttm",   "<="),
-        "pe_ttm_min":   ("pe_ttm",   ">="),
-        "pb_max":       ("pb",       "<="),
-        "pb_min":       ("pb",       ">="),
+        "pe_ttm_max": ("pe_ttm", "<="),
+        "pe_ttm_min": ("pe_ttm", ">="),
+        "pb_max": ("pb", "<="),
+        "pb_min": ("pb", ">="),
         "total_mv_min": ("total_mv", ">="),
         "total_mv_max": ("total_mv", "<="),
         "dv_ratio_min": ("dv_ratio", ">="),
     }
 
-    def __init__(self, filters: Dict[str, Any]):
+    def __init__(self, filters: dict[str, Any]):
         self.filters = filters
-        self._cache: Dict[str, List[str]] = {}
+        self._cache: dict[str, list[str]] = {}
 
-    def get_codes(self, date: str) -> List[str]:
+    def get_codes(self, date: str) -> list[str]:
         if date in self._cache:
             return self._cache[date]
 
+        from sqlalchemy import func
+
         from core.database import db_session
         from models.quant_data import StockDailyFactor
-        from sqlalchemy import func
 
         with db_session() as db:
             # 找到 <= date 的最近因子日（因子不一定每天都有）
             latest = (
-                db.query(func.max(StockDailyFactor.trade_date))
-                .filter(StockDailyFactor.trade_date <= date)
-                .scalar()
+                db.query(func.max(StockDailyFactor.trade_date)).filter(StockDailyFactor.trade_date <= date).scalar()
             )
             if not latest:
                 log.warning("factor_filter_no_data", date=date)
@@ -122,6 +123,7 @@ class FactorFilterUniverse(UniverseProvider):
             industry = self.filters.get("industry")
             if industry and codes:
                 from utils.industry import get_industry_codes
+
                 industry_codes = get_industry_codes(db, industry)
                 codes = [c for c in codes if c in industry_codes]
 
@@ -134,9 +136,9 @@ class FullMarketUniverse(UniverseProvider):
     """全市场：当前所有在市股票"""
 
     def __init__(self):
-        self._cache: Dict[str, List[str]] = {}
+        self._cache: dict[str, list[str]] = {}
 
-    def get_codes(self, date: str) -> List[str]:
+    def get_codes(self, date: str) -> list[str]:
         if date in self._cache:
             return self._cache[date]
 
@@ -146,8 +148,8 @@ class FullMarketUniverse(UniverseProvider):
         # list_date 存为 "YYYY-MM-DD"，date 入参也是 ISO 格式，直接字符串比较
         with db_session() as db:
             codes = [
-                r[0] for r in
-                db.query(StockBasicInfo.code)
+                r[0]
+                for r in db.query(StockBasicInfo.code)
                 .filter(
                     StockBasicInfo.list_date <= date,
                     StockBasicInfo.is_active == True,
@@ -164,7 +166,7 @@ class FullMarketUniverse(UniverseProvider):
         return codes
 
 
-def create_provider(config: Dict[str, Any]) -> UniverseProvider:
+def create_provider(config: dict[str, Any]) -> UniverseProvider:
     """工厂函数：根据配置创建对应的 Provider"""
     provider_type = config.get("type", "custom")
 

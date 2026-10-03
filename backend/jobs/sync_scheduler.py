@@ -6,12 +6,12 @@
 - DB 写入单线程批量
 """
 
-import time
 import threading
-import structlog
-import pandas as pd
-from typing import List, Set, Optional, Dict
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import pandas as pd
+import structlog
 
 from core.database import db_session
 from data_sources.tushare_source import TushareSource
@@ -34,12 +34,12 @@ class SyncScheduler:
 
     def run(
         self,
-        need_sync: List[str],
+        need_sync: list[str],
         batch_start: str,
         end_date: str,
         start_date: str,
-        incremental_starts: Dict,
-        task_id: Optional[str] = None,
+        incremental_starts: dict,
+        task_id: str | None = None,
         total_codes: int = 0,
         already_done: int = 0,
     ) -> dict:
@@ -59,8 +59,13 @@ class SyncScheduler:
 
         if remaining:
             failed_codes, no_trade_codes = self._fallback_phase(
-                remaining, start_date, end_date, incremental_starts,
-                task_id, total_codes, already_done + len(batch_synced),
+                remaining,
+                start_date,
+                end_date,
+                incremental_starts,
+                task_id,
+                total_codes,
+                already_done + len(batch_synced),
             )
         else:
             log.info("batch_covers_all", count=len(batch_synced))
@@ -77,15 +82,14 @@ class SyncScheduler:
     #  Phase A: Tushare 批量
     # ================================================================
 
-    def _batch_phase(self, target_codes: List[str], start_date: str, end_date: str,
-                     task_id: Optional[str]) -> Set[str]:
+    def _batch_phase(self, target_codes: list[str], start_date: str, end_date: str, task_id: str | None) -> set[str]:
         trade_dates = self._get_trade_dates(start_date, end_date)
         if not trade_dates:
             log.warning("no_trade_dates", start=start_date, end=end_date)
             return set()
 
         target_set = set(target_codes)
-        synced: Set[str] = set()
+        synced: set[str] = set()
         total_dates = len(trade_dates)
         log.info("batch_start", trade_dates=total_dates, targets=len(target_codes))
 
@@ -96,30 +100,33 @@ class SyncScheduler:
                 # 拉取全市场行情
                 @tushare_module.with_tushare_retry(max_retries=2, delay=1.0)
                 def _fetch_daily():
-                    return self._ts.pro.daily(trade_date=td)
+                    return self._ts.pro.daily(trade_date=td)  # noqa: B023  # 闭包引用循环变量 td，本次迭代内立即调用，行为符合预期
 
                 @tushare_module.with_tushare_retry(max_retries=2, delay=1.0)
                 def _fetch_adj():
-                    return self._ts.pro.adj_factor(trade_date=td, fields="ts_code,adj_factor")
+                    return self._ts.pro.adj_factor(trade_date=td, fields="ts_code,adj_factor")  # noqa: B023  # 闭包引用循环变量 td，本次迭代内立即调用，行为符合预期
 
                 df_daily = _fetch_daily()
 
                 # daily_basic 需要 2000 积分，隔离 try-catch 避免影响日线行情写入
                 df_basic = None
                 try:
+
                     @tushare_module.with_tushare_retry(max_retries=2, delay=1.0)
                     def _fetch_basic():
                         return self._ts.pro.daily_basic(
-                            trade_date=td,
-                            fields="ts_code,trade_date,turnover_rate,volume_ratio,pe,pe_ttm,pb,ps,ps_ttm,dv_ratio,dv_ttm,total_mv,circ_mv"
+                            trade_date=td,  # noqa: B023  # 闭包引用循环变量 td，本次迭代内立即调用，行为符合预期
+                            fields="ts_code,trade_date,turnover_rate,volume_ratio,pe,pe_ttm,pb,ps,ps_ttm,dv_ratio,dv_ttm,total_mv,circ_mv",
                         )
+
                     df_basic = _fetch_basic()
 
                     # 字段完整性校验（防静默丢失）
                     from data_sources.tushare_source import validate_tushare_fields
-                    validate_tushare_fields(df_basic,
-                        ["turnover_rate", "pe_ttm", "pb", "total_mv", "circ_mv"],
-                        api_name="daily_basic")
+
+                    validate_tushare_fields(
+                        df_basic, ["turnover_rate", "pe_ttm", "pb", "total_mv", "circ_mv"], api_name="daily_basic"
+                    )
                 except Exception as e:
                     log.warning("daily_basic_fetch_failed", trade_date=td, error=str(e)[:80])
 
@@ -137,8 +144,7 @@ class SyncScheduler:
                 # 将 adj_factor 合并到 daily 行情，一起写入 bars 表
                 # 优先从 df_basic 中转（含 PE/PB 等因子场景），df_basic 为 None 时直接用 adj_map
                 if df_daily is not None and not df_daily.empty:
-                    if (df_basic is not None and not df_basic.empty
-                            and "adj_factor" in df_basic.columns):
+                    if df_basic is not None and not df_basic.empty and "adj_factor" in df_basic.columns:
                         adj_from_basic = df_basic.set_index("ts_code")["adj_factor"].to_dict()
                         df_daily["adj_factor"] = df_daily["ts_code"].map(adj_from_basic)
                     elif adj_map:
@@ -156,6 +162,7 @@ class SyncScheduler:
                     self._report(task_id, i + 1, total_dates, f"批量拉取: {td}")
 
                 from settings import TUSHARE_FETCH_SLEEP
+
                 time.sleep(TUSHARE_FETCH_SLEEP)
 
             except Exception as e:
@@ -171,14 +178,14 @@ class SyncScheduler:
 
     def _fallback_phase(
         self,
-        remaining: List[str],
+        remaining: list[str],
         start_date: str,
         end_date: str,
-        incremental_starts: Dict,
-        task_id: Optional[str],
+        incremental_starts: dict,
+        task_id: str | None,
         total_codes: int,
         already_done: int,
-    ) -> tuple[List[str], List[str]]:
+    ) -> tuple[list[str], list[str]]:
         """
         逐只拉取未覆盖的股票。
         Returns: (error_codes, no_trade_codes)
@@ -193,6 +200,7 @@ class SyncScheduler:
         # BaoStock 懒加载 + 线程安全：只有前两个源都失败时才尝试连接
         _bs_lock = threading.Lock()
         _bs_cache = [None, False]  # [instance, initialized]
+
         def _get_bs():
             if not _bs_cache[1]:
                 with _bs_lock:
@@ -200,6 +208,7 @@ class SyncScheduler:
                         _bs_cache[0] = self._init_baostock()
                         _bs_cache[1] = True
             return _bs_cache[0]
+
         ak_source = self._init_akshare()
 
         completed_count = already_done
@@ -211,8 +220,12 @@ class SyncScheduler:
                 effective_start = incremental_starts.get(code) or start_date
                 future = executor.submit(
                     self._fetch_single,
-                    code, short_code, effective_start, end_date,
-                    _get_bs, ak_source,
+                    code,
+                    short_code,
+                    effective_start,
+                    end_date,
+                    _get_bs,
+                    ak_source,
                 )
                 future_to_code[future] = code
 
@@ -244,8 +257,7 @@ class SyncScheduler:
     #  单只股票拉取（纯网络 IO）
     # ================================================================
 
-    def _fetch_single(self, code, short_code, start_date, end_date,
-                      bs_source_fn, ak_source):
+    def _fetch_single(self, code, short_code, start_date, end_date, bs_source_fn, ak_source):
         """拉取单只股票行情 + 因子，返回 (df_bars, df_factors)"""
         df_bars = None
         df_factors = None
@@ -302,7 +314,8 @@ class SyncScheduler:
             def _fetch_daily_basic():
                 return self._ts.pro.daily_basic(
                     ts_code=self._ts._format_ts_code(short_code),
-                    start_date=start_dt, end_date=end_dt,
+                    start_date=start_dt,
+                    end_date=end_dt,
                 )
 
             df_factors = _fetch_daily_basic()
@@ -320,26 +333,32 @@ class SyncScheduler:
             if _resolve_bs():
                 try:
                     import baostock as bs
+
                     from utils.asset_type import to_bs_code
+
                     bs_code = to_bs_code(short_code)
                     rs = bs.query_history_k_data_plus(
                         bs_code,
                         fields="date,code,peTTM,pbMRQ,psTTM,turn,isST",
-                        start_date=start_date, end_date=end_date,
-                        frequency="d", adjustflag="3",
+                        start_date=start_date,
+                        end_date=end_date,
+                        frequency="d",
+                        adjustflag="3",
                     )
                     rows = []
                     while rs.error_code == "0" and rs.next():
                         rows.append(rs.get_row_data())
                     if rows:
                         df_bs = pd.DataFrame(rows, columns=rs.fields)
-                        df_factors = pd.DataFrame({
-                            "trade_date": df_bs["date"],
-                            "pe_ttm": pd.to_numeric(df_bs["peTTM"], errors="coerce"),
-                            "pb": pd.to_numeric(df_bs["pbMRQ"], errors="coerce"),
-                            "ps_ttm": pd.to_numeric(df_bs["psTTM"], errors="coerce"),
-                            "turnover_rate": pd.to_numeric(df_bs["turn"], errors="coerce"),
-                        })
+                        df_factors = pd.DataFrame(
+                            {
+                                "trade_date": df_bs["date"],
+                                "pe_ttm": pd.to_numeric(df_bs["peTTM"], errors="coerce"),
+                                "pb": pd.to_numeric(df_bs["pbMRQ"], errors="coerce"),
+                                "ps_ttm": pd.to_numeric(df_bs["psTTM"], errors="coerce"),
+                                "turnover_rate": pd.to_numeric(df_bs["turn"], errors="coerce"),
+                            }
+                        )
                         df_factors["code"] = code
                 except Exception as e:
                     log.warning("baostock_factors_failed", code=short_code, error=str(e))
@@ -374,6 +393,7 @@ class SyncScheduler:
     def _init_baostock():
         try:
             from data_sources.baostock_source import BaostockSource
+
             src = BaostockSource()
             BaostockSource._login()  # 单例登录，已登录则直接返回
             return src
@@ -385,6 +405,7 @@ class SyncScheduler:
     def _init_akshare():
         try:
             from data_sources.akshare_source import AkShareSource
+
             return AkShareSource()
         except Exception as e:
             log.warning("akshare_init_failed", error=str(e))
@@ -393,10 +414,18 @@ class SyncScheduler:
     @staticmethod
     def _report(task_id: str, current: int, total: int, message: str):
         try:
-            from utils.task_store import task_store, TaskStatus
+            from utils.task_store import TaskStatus, task_store
+
             progress = round(current / total * 100) if total > 0 else 0
-            task_store.update_task(task_id, TaskStatus.RUNNING, result={
-                "progress": progress, "current": current, "total": total, "message": message,
-            })
+            task_store.update_task(
+                task_id,
+                TaskStatus.RUNNING,
+                result={
+                    "progress": progress,
+                    "current": current,
+                    "total": total,
+                    "message": message,
+                },
+            )
         except Exception as e:
             log.warning("task_report_failed", task_id=task_id, error=str(e))

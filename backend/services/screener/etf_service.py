@@ -7,8 +7,9 @@ ETF 筛选 Service
 
 import math
 import re
-import structlog
 from collections import defaultdict
+
+import structlog
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -21,32 +22,119 @@ log = structlog.get_logger(__name__)
 # 数据源选择：ETF 名称格式规范（[基金公司][指数名]ETF），比 benchmark
 # 字段（含"经估值汇率调整后..."等复杂描述）更可靠且无格式变体。
 
-_ETF_FUND_COMPANIES = sorted([
-    "华夏基金", "易方达基金", "南方基金", "嘉实基金", "博时基金",
-    "华泰柏瑞", "景顺长城", "交银施罗德", "申万菱信", "前海开源",
-    "创金合信", "西部利得", "浦银安盛", "中信保诚", "国投瑞银",
-    "方正富邦", "民生加银", "国寿安保", "华润元大", "弘毅远方",
-    "恒生前海", "上投摩根", "南方东英", "红土创新",
-    "工银瑞信", "汇添富", "鹏华", "中欧", "兴业", "银华",
-    "国泰", "中银", "平安", "泰康", "长城", "大成", "万家",
-    "海富通", "摩根", "永赢", "长信", "东方红", "中航",
-    "中金", "中信建投", "国金", "德邦", "诺安", "太平",
-    "长盛", "东财", "兴银", "东吴", "财通", "华富",
-    "国联安", "华宝", "华安", "广发", "富国", "嘉实",
-    "招商", "天弘", "建信", "华夏", "易方达", "南方",
-    "博时", "交银", "国联", "中加", "鑫元", "中海", "顶峰",
-], key=len, reverse=True)
+_ETF_FUND_COMPANIES = sorted(
+    [
+        "华夏基金",
+        "易方达基金",
+        "南方基金",
+        "嘉实基金",
+        "博时基金",
+        "华泰柏瑞",
+        "景顺长城",
+        "交银施罗德",
+        "申万菱信",
+        "前海开源",
+        "创金合信",
+        "西部利得",
+        "浦银安盛",
+        "中信保诚",
+        "国投瑞银",
+        "方正富邦",
+        "民生加银",
+        "国寿安保",
+        "华润元大",
+        "弘毅远方",
+        "恒生前海",
+        "上投摩根",
+        "南方东英",
+        "红土创新",
+        "工银瑞信",
+        "汇添富",
+        "鹏华",
+        "中欧",
+        "兴业",
+        "银华",
+        "国泰",
+        "中银",
+        "平安",
+        "泰康",
+        "长城",
+        "大成",
+        "万家",
+        "海富通",
+        "摩根",
+        "永赢",
+        "长信",
+        "东方红",
+        "中航",
+        "中金",
+        "中信建投",
+        "国金",
+        "德邦",
+        "诺安",
+        "太平",
+        "长盛",
+        "东财",
+        "兴银",
+        "东吴",
+        "财通",
+        "华富",
+        "国联安",
+        "华宝",
+        "华安",
+        "广发",
+        "富国",
+        "嘉实",
+        "招商",
+        "天弘",
+        "建信",
+        "华夏",
+        "易方达",
+        "南方",
+        "博时",
+        "交银",
+        "国联",
+        "中加",
+        "鑫元",
+        "中海",
+        "顶峰",
+    ],
+    key=len,
+    reverse=True,
+)
 
 _ETF_INDEX_PREFIXES = [
-    "上证科创板", "中证全指", "中证800", "中证500",
-    "中证", "上证", "深证", "国证",
-    "深圳证券交易所", "上海证券交易所",
+    "上证科创板",
+    "中证全指",
+    "中证800",
+    "中证500",
+    "中证",
+    "上证",
+    "深证",
+    "国证",
+    "深圳证券交易所",
+    "上海证券交易所",
 ]
 
-_ETF_INDEX_SUFFIXES = sorted([
-    "生物科技", "科技业", "主题", "行业", "产业", "板块", "精选",
-    "设备", "服务", "投资", "股票", "期货", "成份",
-], key=len, reverse=True)
+_ETF_INDEX_SUFFIXES = sorted(
+    [
+        "生物科技",
+        "科技业",
+        "主题",
+        "行业",
+        "产业",
+        "板块",
+        "精选",
+        "设备",
+        "服务",
+        "投资",
+        "股票",
+        "期货",
+        "成份",
+    ],
+    key=len,
+    reverse=True,
+)
 
 
 def _extract_tracking_index(etf_name: str) -> str | None:
@@ -55,17 +143,17 @@ def _extract_tracking_index(etf_name: str) -> str | None:
         return None
     n = etf_name
     for s in ["ETF", "REIT", "LOF", "QDII", "联接", "发起式", "增强策略", "增强"]:
-        n = n.replace(s, '')
-    n = re.sub(r'[()（）\-]', '', n).strip()
+        n = n.replace(s, "")
+    n = re.sub(r"[()（）\-]", "", n).strip()
     for co in _ETF_FUND_COMPANIES:
         if n.startswith(co):
-            n = n[len(co):]
+            n = n[len(co) :]
             break
     # 去编制机构前缀，记录被剥离的前缀以备回填
     stripped_prefix = None
     for pfx in _ETF_INDEX_PREFIXES:
         if n.startswith(pfx):
-            rest = n[len(pfx):].strip()
+            rest = n[len(pfx) :].strip()
             if rest and not rest.isdigit():
                 stripped_prefix = pfx
                 n = rest
@@ -75,7 +163,7 @@ def _extract_tracking_index(etf_name: str) -> str | None:
     # 去末尾修饰词
     for sfx in _ETF_INDEX_SUFFIXES:
         if n.endswith(sfx) and len(n) > len(sfx) + 1:
-            n = n[:-len(sfx)]
+            n = n[: -len(sfx)]
             break
     n = n.strip()
     if not n:
@@ -83,9 +171,14 @@ def _extract_tracking_index(etf_name: str) -> str | None:
     # 去后缀后若只剩纯数字（如"50"），用前缀简称回填（"上证科创板"→"科创"）
     if n.isdigit() and stripped_prefix:
         short = {
-            "上证科创板": "科创", "中证全指": "",
-            "中证800": "中证", "中证500": "中证",
-            "中证": "中证", "上证": "上证", "深证": "深证", "国证": "国证",
+            "上证科创板": "科创",
+            "中证全指": "",
+            "中证800": "中证",
+            "中证500": "中证",
+            "中证": "中证",
+            "上证": "上证",
+            "深证": "深证",
+            "国证": "国证",
         }.get(stripped_prefix, stripped_prefix[:2])
         n = short + n
     if not n:
@@ -106,9 +199,11 @@ def _extract_tracking_index(etf_name: str) -> str | None:
 
 # ==================== ETF→个股联动 ====================
 
+
 def _query_industry_stocks(db: Session, sig_list, top_n, order_desc=True):
     """查同行业个股。优先申万行业映射表精确匹配，降级模糊匹配。"""
     from models.quant_data import SwIndustry
+
     results = []
     seen = set()
     for sig in sig_list:
@@ -117,53 +212,79 @@ def _query_industry_stocks(db: Session, sig_list, top_n, order_desc=True):
             continue
         seen.add(ind)
 
-        stock_codes = [r[0] for r in db.query(SwIndustry.code).filter(
-            SwIndustry.sw_l1_name == ind, SwIndustry.out_date.is_(None),
-        ).all()]
+        stock_codes = [
+            r[0]
+            for r in db.query(SwIndustry.code)
+            .filter(
+                SwIndustry.sw_l1_name == ind,
+                SwIndustry.out_date.is_(None),
+            )
+            .all()
+        ]
         # 排除北交所（4/8/9开头），流动性差不适合联动推荐
         stock_codes = [c for c in stock_codes if c[0] not in ("4", "8", "9")]
 
         if not stock_codes:
             from sqlalchemy import or_
-            stock_codes = [r[0] for r in db.query(StockBasicInfo.code).filter(
-                or_(StockBasicInfo.industry.like(f"%{ind[:2]}%"), StockBasicInfo.industry == ind),
-                ~StockBasicInfo.code.like("4%"),
-                ~StockBasicInfo.code.like("8%"),
-                ~StockBasicInfo.code.like("9%"),
-            ).all()]
+
+            stock_codes = [
+                r[0]
+                for r in db.query(StockBasicInfo.code)
+                .filter(
+                    or_(StockBasicInfo.industry.like(f"%{ind[:2]}%"), StockBasicInfo.industry == ind),
+                    ~StockBasicInfo.code.like("4%"),
+                    ~StockBasicInfo.code.like("8%"),
+                    ~StockBasicInfo.code.like("9%"),
+                )
+                .all()
+            ]
 
         if not stock_codes:
             results.append({"etf": sig, "industry": ind, "stocks": []})
             continue
 
-        stock_latest = db.query(func.max(StockDailyBar.trade_date)).filter(
-            StockDailyBar.code.in_(stock_codes)
-        ).scalar()
+        stock_latest = db.query(func.max(StockDailyBar.trade_date)).filter(StockDailyBar.code.in_(stock_codes)).scalar()
         if not stock_latest:
             results.append({"etf": sig, "industry": ind, "stocks": []})
             continue
 
         order = StockDailyBar.pct_chg.desc() if order_desc else StockDailyBar.pct_chg.asc()
-        top_stocks = db.query(
-            StockDailyBar.code, StockDailyBar.close, StockDailyBar.pct_chg, StockDailyBar.amount,
-        ).filter(
-            StockDailyBar.trade_date == stock_latest,
-            StockDailyBar.code.in_(stock_codes),
-        ).order_by(order).limit(top_n).all()
+        top_stocks = (
+            db.query(
+                StockDailyBar.code,
+                StockDailyBar.close,
+                StockDailyBar.pct_chg,
+                StockDailyBar.amount,
+            )
+            .filter(
+                StockDailyBar.trade_date == stock_latest,
+                StockDailyBar.code.in_(stock_codes),
+            )
+            .order_by(order)
+            .limit(top_n)
+            .all()
+        )
 
-        stock_names = {r.code: r.name for r in db.query(
-            StockBasicInfo.code, StockBasicInfo.name
-        ).filter(StockBasicInfo.code.in_([s.code for s in top_stocks])).all()}
+        stock_names = {
+            r.code: r.name
+            for r in db.query(StockBasicInfo.code, StockBasicInfo.name)
+            .filter(StockBasicInfo.code.in_([s.code for s in top_stocks]))
+            .all()
+        }
 
         amount_ranked = sorted(top_stocks, key=lambda s: float(s.amount or 0), reverse=True)
         leader_codes = {s.code for s in amount_ranked[:3]}
 
-        stocks = [{
-            "code": s.code, "name": stock_names.get(s.code, s.code),
-            "close": round(float(s.close or 0), 2),
-            "pct_chg": round(float(s.pct_chg or 0), 2),
-            "is_leader": s.code in leader_codes,
-        } for s in top_stocks]
+        stocks = [
+            {
+                "code": s.code,
+                "name": stock_names.get(s.code, s.code),
+                "close": round(float(s.close or 0), 2),
+                "pct_chg": round(float(s.pct_chg or 0), 2),
+                "is_leader": s.code in leader_codes,
+            }
+            for s in top_stocks
+        ]
 
         results.append({"etf": sig, "industry": ind, "stocks": stocks})
     return results
@@ -173,33 +294,52 @@ def get_etf_stock_link(db: Session, *, volume_ratio: float = 1.5, top_n: int = 5
     """ETF 放量→个股推荐联动。返回4组信号。"""
     from models.quant_data import EtfBasicInfo, EtfDailyBar
 
-    industry_etfs = db.query(EtfBasicInfo).filter(
-        EtfBasicInfo.is_active == True, EtfBasicInfo.industry.isnot(None),
-    ).all()
+    industry_etfs = (
+        db.query(EtfBasicInfo)
+        .filter(
+            EtfBasicInfo.is_active == True,
+            EtfBasicInfo.industry.isnot(None),
+        )
+        .all()
+    )
     if not industry_etfs:
-        return {"today_links": [], "today_warnings": [],
-                "week_links": [], "week_warnings": [], "trade_date": None}
+        return {"today_links": [], "today_warnings": [], "week_links": [], "week_warnings": [], "trade_date": None}
 
     codes = [e.code for e in industry_etfs]
     etf_map = {e.code: {"name": e.name, "industry": e.industry} for e in industry_etfs}
 
-    trade_dates = [r[0] for r in (
-        db.query(EtfDailyBar.trade_date).filter(EtfDailyBar.code.in_(codes))
-        .distinct().order_by(EtfDailyBar.trade_date.desc()).limit(5).all()
-    )]
+    trade_dates = [
+        r[0]
+        for r in (
+            db.query(EtfDailyBar.trade_date)
+            .filter(EtfDailyBar.code.in_(codes))
+            .distinct()
+            .order_by(EtfDailyBar.trade_date.desc())
+            .limit(5)
+            .all()
+        )
+    ]
     if not trade_dates:
-        return {"today_links": [], "today_warnings": [],
-                "week_links": [], "week_warnings": [], "trade_date": None}
+        return {"today_links": [], "today_warnings": [], "week_links": [], "week_warnings": [], "trade_date": None}
 
     latest_date = trade_dates[0]
 
-    hist_dates = [r[0] for r in (
-        db.query(EtfDailyBar.trade_date).filter(EtfDailyBar.code.in_(codes))
-        .distinct().order_by(EtfDailyBar.trade_date.desc()).limit(25).all()
-    )]
-    hist_rows = db.query(
-        EtfDailyBar.code, EtfDailyBar.trade_date, EtfDailyBar.amount
-    ).filter(EtfDailyBar.code.in_(codes), EtfDailyBar.trade_date.in_(hist_dates)).all()
+    hist_dates = [
+        r[0]
+        for r in (
+            db.query(EtfDailyBar.trade_date)
+            .filter(EtfDailyBar.code.in_(codes))
+            .distinct()
+            .order_by(EtfDailyBar.trade_date.desc())
+            .limit(25)
+            .all()
+        )
+    ]
+    hist_rows = (
+        db.query(EtfDailyBar.code, EtfDailyBar.trade_date, EtfDailyBar.amount)
+        .filter(EtfDailyBar.code.in_(codes), EtfDailyBar.trade_date.in_(hist_dates))
+        .all()
+    )
 
     code_history = defaultdict(list)
     for r in hist_rows:
@@ -209,9 +349,14 @@ def get_etf_stock_link(db: Session, *, volume_ratio: float = 1.5, top_n: int = 5
         code_history[code].sort(key=lambda x: x[0], reverse=True)
 
     def _scan_volume_signals(target_dates):
-        rows = db.query(EtfDailyBar).filter(
-            EtfDailyBar.code.in_(codes), EtfDailyBar.trade_date.in_(target_dates),
-        ).all()
+        rows = (
+            db.query(EtfDailyBar)
+            .filter(
+                EtfDailyBar.code.in_(codes),
+                EtfDailyBar.trade_date.in_(target_dates),
+            )
+            .all()
+        )
         best_by_code = {}
         for row in rows:
             if not row.amount or row.amount <= 0:
@@ -230,7 +375,8 @@ def get_etf_stock_link(db: Session, *, volume_ratio: float = 1.5, top_n: int = 5
             if not prev or ratio > prev["volume_ratio"]:
                 info = etf_map.get(row.code, {})
                 best_by_code[row.code] = {
-                    "code": row.code, "name": info.get("name", ""),
+                    "code": row.code,
+                    "name": info.get("name", ""),
                     "industry": info.get("industry", ""),
                     "pct_chg": round(float(row.pct_chg or 0), 2),
                     "volume_ratio": round(ratio, 2),
@@ -255,9 +401,12 @@ def get_etf_stock_link(db: Session, *, volume_ratio: float = 1.5, top_n: int = 5
     week_links, week_warnings = _split_and_query(week_only)
 
     return {
-        "today_links": today_links, "today_warnings": today_warnings,
-        "week_links": week_links, "week_warnings": week_warnings,
-        "trade_date": str(latest_date), "volume_ratio_threshold": volume_ratio,
+        "today_links": today_links,
+        "today_warnings": today_warnings,
+        "week_links": week_links,
+        "week_warnings": week_warnings,
+        "trade_date": str(latest_date),
+        "volume_ratio_threshold": volume_ratio,
     }
 
 
@@ -273,26 +422,35 @@ def get_etf_list(db: Session, *, category: str = None) -> dict:
         return {"etfs": [], "categories": [], "total": 0}
 
     codes = [e.code for e in etfs]
-    latest_date = db.query(func.max(EtfDailyBar.trade_date)).filter(
-        EtfDailyBar.code.in_(codes)).scalar()
+    latest_date = db.query(func.max(EtfDailyBar.trade_date)).filter(EtfDailyBar.code.in_(codes)).scalar()
 
     bar_map = {}
     if latest_date:
-        bars = db.query(EtfDailyBar).filter(
-            EtfDailyBar.code.in_(codes), EtfDailyBar.trade_date == latest_date,
-        ).all()
+        bars = (
+            db.query(EtfDailyBar)
+            .filter(
+                EtfDailyBar.code.in_(codes),
+                EtfDailyBar.trade_date == latest_date,
+            )
+            .all()
+        )
         bar_map = {b.code: b for b in bars}
 
     results = []
     for e in etfs:
         bar = bar_map.get(e.code)
-        results.append({
-            "code": e.code, "name": e.name, "category": e.category,
-            "fund_type": e.fund_type, "management": e.management,
-            "pct_chg": round(float(bar.pct_chg or 0), 2) if bar else None,
-            "close": round(float(bar.close or 0), 3) if bar else None,
-            "amount": round(float(bar.amount or 0), 0) if bar else None,
-        })
+        results.append(
+            {
+                "code": e.code,
+                "name": e.name,
+                "category": e.category,
+                "fund_type": e.fund_type,
+                "management": e.management,
+                "pct_chg": round(float(bar.pct_chg or 0), 2) if bar else None,
+                "close": round(float(bar.close or 0), 3) if bar else None,
+                "amount": round(float(bar.amount or 0), 0) if bar else None,
+            }
+        )
     results.sort(key=lambda x: abs(x.get("amount") or 0), reverse=True)
 
     cat_counts = {}
@@ -302,7 +460,9 @@ def get_etf_list(db: Session, *, category: str = None) -> dict:
     categories = [{"name": k, "count": v} for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])]
 
     return {
-        "etfs": results, "categories": categories, "total": len(results),
+        "etfs": results,
+        "categories": categories,
+        "total": len(results),
         "trade_date": str(latest_date) if latest_date else None,
     }
 
@@ -317,8 +477,12 @@ def get_etf_reversal(db: Session, *, top_n: int = 5) -> dict:
         return {"weak_to_strong": [], "strong_to_weak": [], "error": "无ETF数据"}
 
     recent_dates = (
-        db.query(EtfDailyBar.trade_date).filter(EtfDailyBar.code.in_(etf_codes))
-        .distinct().order_by(EtfDailyBar.trade_date.desc()).limit(6).all()
+        db.query(EtfDailyBar.trade_date)
+        .filter(EtfDailyBar.code.in_(etf_codes))
+        .distinct()
+        .order_by(EtfDailyBar.trade_date.desc())
+        .limit(6)
+        .all()
     )
     if len(recent_dates) < 2:
         return {"weak_to_strong": [], "strong_to_weak": [], "error": "数据不足"}
@@ -326,16 +490,23 @@ def get_etf_reversal(db: Session, *, top_n: int = 5) -> dict:
     today = recent_dates[0][0]
     date_5d_start = recent_dates[-1][0]
 
-    today_rows = db.query(EtfDailyBar.code, EtfDailyBar.pct_chg).filter(
-        EtfDailyBar.code.in_(etf_codes), EtfDailyBar.trade_date == today).all()
+    today_rows = (
+        db.query(EtfDailyBar.code, EtfDailyBar.pct_chg)
+        .filter(EtfDailyBar.code.in_(etf_codes), EtfDailyBar.trade_date == today)
+        .all()
+    )
     today_map = {r[0]: float(r[1] or 0) for r in today_rows}
 
-    avg_rows = db.query(
-        EtfDailyBar.code, func.round(func.avg(EtfDailyBar.pct_chg), 3)
-    ).filter(
-        EtfDailyBar.code.in_(etf_codes),
-        EtfDailyBar.trade_date >= date_5d_start, EtfDailyBar.trade_date < today,
-    ).group_by(EtfDailyBar.code).all()
+    avg_rows = (
+        db.query(EtfDailyBar.code, func.round(func.avg(EtfDailyBar.pct_chg), 3))
+        .filter(
+            EtfDailyBar.code.in_(etf_codes),
+            EtfDailyBar.trade_date >= date_5d_start,
+            EtfDailyBar.trade_date < today,
+        )
+        .group_by(EtfDailyBar.code)
+        .all()
+    )
     avg5d_map = {r[0]: float(r[1] or 0) for r in avg_rows}
 
     codes = set(today_map.keys()) & set(avg5d_map.keys())
@@ -355,20 +526,25 @@ def get_etf_reversal(db: Session, *, top_n: int = 5) -> dict:
 
     def _build(code_set, sort_key, reverse=True):
         items = sorted(code_set, key=lambda c: sort_key(c), reverse=reverse)[:top_n]
-        return [{
-            "code": c, "name": (info_map.get(c) and info_map[c].name) or c,
-            "industry": (info_map.get(c) and info_map[c].industry) or None,
-            "today_chg": round(today_map.get(c, 0), 2),
-            "avg5d_chg": round(avg5d_map.get(c, 0), 2),
-            "swing": round(today_map.get(c, 0) - avg5d_map.get(c, 0), 2),
-        } for c in items]
+        return [
+            {
+                "code": c,
+                "name": (info_map.get(c) and info_map[c].name) or c,
+                "industry": (info_map.get(c) and info_map[c].industry) or None,
+                "today_chg": round(today_map.get(c, 0), 2),
+                "avg5d_chg": round(avg5d_map.get(c, 0), 2),
+                "swing": round(today_map.get(c, 0) - avg5d_map.get(c, 0), 2),
+            }
+            for c in items
+        ]
 
     _, data_verified = get_verified_trade_date("etf")
 
     return {
         "weak_to_strong": _build(w2s_codes, lambda c: today_map.get(c, 0) - avg5d_map.get(c, 0)),
         "strong_to_weak": _build(s2w_codes, lambda c: avg5d_map.get(c, 0) - today_map.get(c, 0)),
-        "trade_date": str(today), "data_verified": data_verified,
+        "trade_date": str(today),
+        "data_verified": data_verified,
     }
 
 
@@ -390,34 +566,51 @@ def etf_smart_screen(db: Session, *, top_n: int = 20, category: str = None, sub_
         return {"etfs": [], "error": "无ETF数据"}
 
     # 取250天用于1年均涨，前20天用于短期评分
-    all_dates = [r[0] for r in (
-        db.query(EtfDailyBar.trade_date).filter(EtfDailyBar.code.in_(etf_codes))
-        .distinct().order_by(EtfDailyBar.trade_date.desc()).limit(250).all()
-    )]
+    all_dates = [
+        r[0]
+        for r in (
+            db.query(EtfDailyBar.trade_date)
+            .filter(EtfDailyBar.code.in_(etf_codes))
+            .distinct()
+            .order_by(EtfDailyBar.trade_date.desc())
+            .limit(250)
+            .all()
+        )
+    ]
     if len(all_dates) < 5:
         return {"etfs": [], "error": "数据不足"}
 
     today = all_dates[0]
     recent_dates = all_dates[:20]
 
-    stats = db.query(
-        EtfDailyBar.code,
-        func.avg(EtfDailyBar.pct_chg).label("avg_chg"),
-        func.avg(EtfDailyBar.amount).label("avg_amount"),
-        func.count(EtfDailyBar.code).label("days"),
-        # 波动率用于 Sharpe 比率
-        func.avg(EtfDailyBar.pct_chg * EtfDailyBar.pct_chg).label("avg_sq"),
-    ).filter(
-        EtfDailyBar.code.in_(etf_codes), EtfDailyBar.trade_date.in_(recent_dates),
-    ).group_by(EtfDailyBar.code).all()
+    stats = (
+        db.query(
+            EtfDailyBar.code,
+            func.avg(EtfDailyBar.pct_chg).label("avg_chg"),
+            func.avg(EtfDailyBar.amount).label("avg_amount"),
+            func.count(EtfDailyBar.code).label("days"),
+            # 波动率用于 Sharpe 比率
+            func.avg(EtfDailyBar.pct_chg * EtfDailyBar.pct_chg).label("avg_sq"),
+        )
+        .filter(
+            EtfDailyBar.code.in_(etf_codes),
+            EtfDailyBar.trade_date.in_(recent_dates),
+        )
+        .group_by(EtfDailyBar.code)
+        .all()
+    )
 
     # 近1年累计涨幅（今日close / 250天前close - 1）
-    yearly_chg = {}
     if len(all_dates) > 20:
         earliest_date = all_dates[-1]
-        earliest_bars = db.query(EtfDailyBar.code, EtfDailyBar.close).filter(
-            EtfDailyBar.code.in_(etf_codes), EtfDailyBar.trade_date == earliest_date,
-        ).all()
+        earliest_bars = (
+            db.query(EtfDailyBar.code, EtfDailyBar.close)
+            .filter(
+                EtfDailyBar.code.in_(etf_codes),
+                EtfDailyBar.trade_date == earliest_date,
+            )
+            .all()
+        )
         earliest_map = {r[0]: float(r[1]) for r in earliest_bars if r[1]}
     else:
         earliest_map = {}
@@ -426,14 +619,24 @@ def etf_smart_screen(db: Session, *, top_n: int = 20, category: str = None, sub_
     date_20d_ago = recent_dates[-1] if len(recent_dates) >= 2 else None
     base_20d_map = {}
     if date_20d_ago:
-        base_20d_bars = db.query(EtfDailyBar.code, EtfDailyBar.close).filter(
-            EtfDailyBar.code.in_(etf_codes), EtfDailyBar.trade_date == date_20d_ago,
-        ).all()
+        base_20d_bars = (
+            db.query(EtfDailyBar.code, EtfDailyBar.close)
+            .filter(
+                EtfDailyBar.code.in_(etf_codes),
+                EtfDailyBar.trade_date == date_20d_ago,
+            )
+            .all()
+        )
         base_20d_map = {r[0]: float(r[1]) for r in base_20d_bars if r[1]}
 
-    today_bars = db.query(EtfDailyBar).filter(
-        EtfDailyBar.code.in_(etf_codes), EtfDailyBar.trade_date == today,
-    ).all()
+    today_bars = (
+        db.query(EtfDailyBar)
+        .filter(
+            EtfDailyBar.code.in_(etf_codes),
+            EtfDailyBar.trade_date == today,
+        )
+        .all()
+    )
     today_map = {b.code: b for b in today_bars}
 
     info_map = {r.code: r for r in db.query(EtfBasicInfo).filter(EtfBasicInfo.code.in_(etf_codes)).all()}
@@ -456,7 +659,7 @@ def etf_smart_screen(db: Session, *, top_n: int = 20, category: str = None, sub_
 
         # Sharpe 比率：avg / std（手动算 std = sqrt(E[x²] - E[x]²)）
         avg_sq = float(row[4] or 0)
-        variance = max(avg_sq - avg_chg ** 2, 0)
+        variance = max(avg_sq - avg_chg**2, 0)
         std_chg = math.sqrt(variance) if variance > 0 else 0.01
         sharpe = avg_chg / max(std_chg, 0.01)
 
@@ -484,47 +687,57 @@ def etf_smart_screen(db: Session, *, top_n: int = 20, category: str = None, sub_
         # 从 ETF 名称提取跟踪指数短名
         bm_clean = _extract_tracking_index(info.name)
 
-        scored.append({
-            "code": code, "name": info.name, "category": info.category,
-            "sub_category": info.sub_category,
-            "list_date": info.list_date,
-            "benchmark": bm_clean,
-            "close": round(today_close, 3),
-            "pct_chg": round(today_chg, 2),
-            "amount": round(float(bar.amount or 0), 0),
-            "pct_chg_20d": pct_20d,
-            "avg_amount_20d": round(avg_amount, 0),
-            "pct_chg_1y": pct_1y,
-            "score": round(composite, 1), "reversal": reversal,
-        })
+        scored.append(
+            {
+                "code": code,
+                "name": info.name,
+                "category": info.category,
+                "sub_category": info.sub_category,
+                "list_date": info.list_date,
+                "benchmark": bm_clean,
+                "close": round(today_close, 3),
+                "pct_chg": round(today_chg, 2),
+                "amount": round(float(bar.amount or 0), 0),
+                "pct_chg_20d": pct_20d,
+                "avg_amount_20d": round(avg_amount, 0),
+                "pct_chg_1y": pct_1y,
+                "score": round(composite, 1),
+                "reversal": reversal,
+            }
+        )
 
     scored.sort(key=lambda x: x["score"], reverse=True)
 
     # ── 联查 EtfFundSnapshot 补充净值/份额/溢价率/规模字段 ──
     try:
         from models.quant_data import EtfFundSnapshot
+
         snap_date = db.query(func.max(EtfFundSnapshot.trade_date)).scalar()
         if snap_date:
-            snap_rows = db.query(EtfFundSnapshot).filter(
-                EtfFundSnapshot.trade_date == snap_date,
-                EtfFundSnapshot.code.in_(etf_codes),
-            ).all()
+            snap_rows = (
+                db.query(EtfFundSnapshot)
+                .filter(
+                    EtfFundSnapshot.trade_date == snap_date,
+                    EtfFundSnapshot.code.in_(etf_codes),
+                )
+                .all()
+            )
             snap_map = {r.code: r for r in snap_rows}
 
             # 净值 fallback：当天快照 nav 为空 或 完全无快照的 ETF，查最近有值的记录
-            nav_missing_codes = [
-                code for code in etf_codes
-                if code not in snap_map or not snap_map[code].unit_nav
-            ]
+            nav_missing_codes = [code for code in etf_codes if code not in snap_map or not snap_map[code].unit_nav]
             nav_fallback_map = {}  # code → snapshot row with unit_nav
             if nav_missing_codes:
-                fb_rows = db.query(EtfFundSnapshot).filter(
-                    EtfFundSnapshot.code.in_(nav_missing_codes),
-                    EtfFundSnapshot.trade_date < snap_date,
-                    EtfFundSnapshot.unit_nav.isnot(None),
-                ).order_by(
-                    EtfFundSnapshot.code, EtfFundSnapshot.trade_date.desc()
-                ).all()
+                fb_rows = (
+                    db.query(EtfFundSnapshot)
+                    .filter(
+                        EtfFundSnapshot.code.in_(nav_missing_codes),
+                        EtfFundSnapshot.trade_date < snap_date,
+                        EtfFundSnapshot.unit_nav.isnot(None),
+                    )
+                    .order_by(EtfFundSnapshot.code, EtfFundSnapshot.trade_date.desc())
+                    .all()
+                )
                 for r in fb_rows:
                     if r.code not in nav_fallback_map:
                         nav_fallback_map[r.code] = r
@@ -534,25 +747,34 @@ def etf_smart_screen(db: Session, *, top_n: int = 20, category: str = None, sub_
             prev_snap_map = {}
             if len(all_dates) >= 20:
                 prev_date_20 = all_dates[19]  # 约 20 交易日前
-                actual_prev = db.query(func.max(EtfFundSnapshot.trade_date)).filter(
-                    EtfFundSnapshot.trade_date <= prev_date_20
-                ).scalar()
+                actual_prev = (
+                    db.query(func.max(EtfFundSnapshot.trade_date))
+                    .filter(EtfFundSnapshot.trade_date <= prev_date_20)
+                    .scalar()
+                )
                 if actual_prev:
-                    prev_rows = db.query(
-                        EtfFundSnapshot.code, EtfFundSnapshot.total_share, EtfFundSnapshot.unit_nav
-                    ).filter(
-                        EtfFundSnapshot.trade_date == actual_prev,
-                        EtfFundSnapshot.code.in_(etf_codes),
-                    ).all()
+                    prev_rows = (
+                        db.query(EtfFundSnapshot.code, EtfFundSnapshot.total_share, EtfFundSnapshot.unit_nav)
+                        .filter(
+                            EtfFundSnapshot.trade_date == actual_prev,
+                            EtfFundSnapshot.code.in_(etf_codes),
+                        )
+                        .all()
+                    )
                     # REITs nav 常为空，查 20 天前收盘价做 fallback
                     prev_close_map = {}
                     nav_missing_codes = [r.code for r in prev_rows if r.total_share and not r.unit_nav]
                     if nav_missing_codes:
                         from models.quant_data import EtfDailyBar
-                        prev_bars = db.query(EtfDailyBar.code, EtfDailyBar.close).filter(
-                            EtfDailyBar.code.in_(nav_missing_codes),
-                            EtfDailyBar.trade_date == prev_date_20,
-                        ).all()
+
+                        prev_bars = (
+                            db.query(EtfDailyBar.code, EtfDailyBar.close)
+                            .filter(
+                                EtfDailyBar.code.in_(nav_missing_codes),
+                                EtfDailyBar.trade_date == prev_date_20,
+                            )
+                            .all()
+                        )
                         prev_close_map = {r[0]: float(r[1]) for r in prev_bars if r[1]}
                     for r in prev_rows:
                         if r.total_share:
@@ -575,8 +797,16 @@ def etf_smart_screen(db: Session, *, top_n: int = 20, category: str = None, sub_
                     nav_source_date = fb.trade_date
                     total_share = float(fb.total_share) if fb.total_share else None
                 else:
-                    item.update({"unit_nav": None, "nav_date": None, "premium": None,
-                                 "total_share": None, "total_size": None, "size_chg": None})
+                    item.update(
+                        {
+                            "unit_nav": None,
+                            "nav_date": None,
+                            "premium": None,
+                            "total_share": None,
+                            "total_size": None,
+                            "size_chg": None,
+                        }
+                    )
                     continue
 
                 # 溢价率 = close / unit_nav - 1
@@ -600,57 +830,81 @@ def etf_smart_screen(db: Session, *, top_n: int = 20, category: str = None, sub_
                         prev_size_yi = prev_size / 1e8  # 转亿元
                         size_chg = round(total_size - prev_size_yi, 2)
 
-                item.update({
-                    "unit_nav": round(unit_nav, 4) if unit_nav else None,
-                    "nav_date": str(nav_source_date) if nav_source_date else None,
-                    "premium": premium,
-                    "total_share": round(total_share / 1e4, 2) if total_share else None,  # 万份
-                    "total_size": total_size,  # 亿元
-                    "size_chg": size_chg,
-                })
+                item.update(
+                    {
+                        "unit_nav": round(unit_nav, 4) if unit_nav else None,
+                        "nav_date": str(nav_source_date) if nav_source_date else None,
+                        "premium": premium,
+                        "total_share": round(total_share / 1e4, 2) if total_share else None,  # 万份
+                        "total_size": total_size,  # 亿元
+                        "size_chg": size_chg,
+                    }
+                )
         else:
             # 无快照数据时填 None
             for item in scored:
-                item.update({"unit_nav": None, "nav_date": None, "premium": None,
-                             "total_share": None, "total_size": None, "size_chg": None})
+                item.update(
+                    {
+                        "unit_nav": None,
+                        "nav_date": None,
+                        "premium": None,
+                        "total_share": None,
+                        "total_size": None,
+                        "size_chg": None,
+                    }
+                )
     except Exception as snap_err:
         log.warning("etf_smart_snapshot_join_failed", error=str(snap_err)[:80])
         for item in scored:
-            item.update({"unit_nav": None, "nav_date": None, "premium": None,
-                         "total_share": None, "total_size": None, "size_chg": None})
+            item.update(
+                {
+                    "unit_nav": None,
+                    "nav_date": None,
+                    "premium": None,
+                    "total_share": None,
+                    "total_size": None,
+                    "size_chg": None,
+                }
+            )
 
     _, data_verified = get_verified_trade_date("etf")
 
     # 分类计数（基于通过质量过滤的全量 scored，与筛选结果同口径）
     # 一级分类计数（始终基于全量，不受 category/sub_category 过滤影响）
-    all_cats = db.query(
-        EtfBasicInfo.category, func.count(EtfBasicInfo.code)
-    ).filter(
-        EtfBasicInfo.is_active == True,
-    ).group_by(EtfBasicInfo.category).all()
-    category_counts = [{"name": k, "count": v}
-                       for k, v in sorted(all_cats, key=lambda x: -x[1])]
+    all_cats = (
+        db.query(EtfBasicInfo.category, func.count(EtfBasicInfo.code))
+        .filter(
+            EtfBasicInfo.is_active == True,
+        )
+        .group_by(EtfBasicInfo.category)
+        .all()
+    )
+    category_counts = [{"name": k, "count": v} for k, v in sorted(all_cats, key=lambda x: -x[1])]
 
     # 二级分类计数（始终基于一级分类全量，不受 sub_category 过滤影响）
     sub_counts = []
     if category:
-        all_subs = db.query(
-            EtfBasicInfo.sub_category, func.count(EtfBasicInfo.code)
-        ).filter(
-            EtfBasicInfo.is_active == True,
-            EtfBasicInfo.category == category,
-        ).group_by(EtfBasicInfo.sub_category).all()
+        all_subs = (
+            db.query(EtfBasicInfo.sub_category, func.count(EtfBasicInfo.code))
+            .filter(
+                EtfBasicInfo.is_active == True,
+                EtfBasicInfo.category == category,
+            )
+            .group_by(EtfBasicInfo.sub_category)
+            .all()
+        )
         sub_map = {}
         for sc, cnt in all_subs:
             sub_map[sc or "其他"] = cnt
-        sub_counts = [{"name": k, "count": v}
-                      for k, v in sorted(sub_map.items(), key=lambda x: -x[1])]
+        sub_counts = [{"name": k, "count": v} for k, v in sorted(sub_map.items(), key=lambda x: -x[1])]
 
     return {
         # 按分类筛选返回全量（前端分页），全市场排名才限 top_n
-        "etfs": scored if category else scored[:top_n], "total": len(scored),
+        "etfs": scored if category else scored[:top_n],
+        "total": len(scored),
         "filtered_out": filtered_out,
-        "trade_date": str(today), "data_verified": data_verified,
+        "trade_date": str(today),
+        "data_verified": data_verified,
         "category_counts": category_counts,
         "sub_category_counts": sub_counts,
     }
@@ -662,36 +916,50 @@ def get_etf_ranking(db: Session, *, top_n: int = 10) -> dict:
 
     etf_codes = [r[0] for r in db.query(EtfBasicInfo.code).filter(EtfBasicInfo.is_active == True).all()]
     if not etf_codes:
-        return {"today_top": [], "today_bottom": [],
-                "fiveday_top": [], "fiveday_bottom": [], "error": "无ETF数据"}
+        return {"today_top": [], "today_bottom": [], "fiveday_top": [], "fiveday_bottom": [], "error": "无ETF数据"}
 
-    recent_dates = [r[0] for r in (
-        db.query(EtfDailyBar.trade_date).filter(EtfDailyBar.code.in_(etf_codes))
-        .distinct().order_by(EtfDailyBar.trade_date.desc()).limit(6).all()
-    )]
+    recent_dates = [
+        r[0]
+        for r in (
+            db.query(EtfDailyBar.trade_date)
+            .filter(EtfDailyBar.code.in_(etf_codes))
+            .distinct()
+            .order_by(EtfDailyBar.trade_date.desc())
+            .limit(6)
+            .all()
+        )
+    ]
     if not recent_dates:
-        return {"today_top": [], "today_bottom": [],
-                "fiveday_top": [], "fiveday_bottom": [], "error": "数据不足"}
+        return {"today_top": [], "today_bottom": [], "fiveday_top": [], "fiveday_bottom": [], "error": "数据不足"}
 
     today = recent_dates[0]
     info_map = {r.code: r for r in db.query(EtfBasicInfo).filter(EtfBasicInfo.code.in_(etf_codes)).all()}
 
-    today_rows = db.query(EtfDailyBar).filter(
-        EtfDailyBar.code.in_(etf_codes), EtfDailyBar.trade_date == today,
-    ).all()
+    today_rows = (
+        db.query(EtfDailyBar)
+        .filter(
+            EtfDailyBar.code.in_(etf_codes),
+            EtfDailyBar.trade_date == today,
+        )
+        .all()
+    )
 
     today_data = []
     for b in today_rows:
         info = info_map.get(b.code)
         if not info or b.pct_chg is None:
             continue
-        today_data.append({
-            "code": b.code, "name": info.name, "category": info.category,
-            "industry": info.industry,
-            "close": round(float(b.close or 0), 3),
-            "pct_chg": round(float(b.pct_chg), 2),
-            "amount": round(float(b.amount or 0), 0),
-        })
+        today_data.append(
+            {
+                "code": b.code,
+                "name": info.name,
+                "category": info.category,
+                "industry": info.industry,
+                "close": round(float(b.close or 0), 3),
+                "pct_chg": round(float(b.pct_chg), 2),
+                "amount": round(float(b.amount or 0), 0),
+            }
+        )
 
     today_sorted = sorted(today_data, key=lambda x: x["pct_chg"], reverse=True)
     today_top = today_sorted[:top_n]
@@ -701,33 +969,47 @@ def get_etf_ranking(db: Session, *, top_n: int = 10) -> dict:
     fiveday_bottom = []
     if len(recent_dates) >= 2:
         five_day_dates = recent_dates[:6]
-        avg_rows = db.query(
-            EtfDailyBar.code, func.sum(EtfDailyBar.pct_chg).label("sum_chg"),
-            func.avg(EtfDailyBar.amount).label("avg_amt"),
-        ).filter(
-            EtfDailyBar.code.in_(etf_codes), EtfDailyBar.trade_date.in_(five_day_dates),
-        ).group_by(EtfDailyBar.code).all()
+        avg_rows = (
+            db.query(
+                EtfDailyBar.code,
+                func.sum(EtfDailyBar.pct_chg).label("sum_chg"),
+                func.avg(EtfDailyBar.amount).label("avg_amt"),
+            )
+            .filter(
+                EtfDailyBar.code.in_(etf_codes),
+                EtfDailyBar.trade_date.in_(five_day_dates),
+            )
+            .group_by(EtfDailyBar.code)
+            .all()
+        )
 
         fiveday_data = []
         for row in avg_rows:
             info = info_map.get(row[0])
             if not info or row[1] is None:
                 continue
-            fiveday_data.append({
-                "code": row[0], "name": info.name, "category": info.category,
-                "industry": info.industry,
-                "pct_chg_5d": round(float(row[1]), 2),
-                "avg_amount": round(float(row[2] or 0), 0),
-            })
+            fiveday_data.append(
+                {
+                    "code": row[0],
+                    "name": info.name,
+                    "category": info.category,
+                    "industry": info.industry,
+                    "pct_chg_5d": round(float(row[1]), 2),
+                    "avg_amount": round(float(row[2] or 0), 0),
+                }
+            )
 
         fiveday_sorted = sorted(fiveday_data, key=lambda x: x["pct_chg_5d"], reverse=True)
         fiveday_top = fiveday_sorted[:top_n]
         fiveday_bottom = fiveday_sorted[-top_n:][::-1]
 
     return {
-        "today_top": today_top, "today_bottom": today_bottom,
-        "fiveday_top": fiveday_top, "fiveday_bottom": fiveday_bottom,
-        "trade_date": str(today), "total_etfs": len(today_data),
+        "today_top": today_top,
+        "today_bottom": today_bottom,
+        "fiveday_top": fiveday_top,
+        "fiveday_bottom": fiveday_bottom,
+        "trade_date": str(today),
+        "total_etfs": len(today_data),
     }
 
 
@@ -742,17 +1024,29 @@ def get_etf_overview(db: Session) -> dict:
     etf_codes = [e.code for e in etf_all]
     info_map = {e.code: e for e in etf_all}
 
-    recent_dates = [r[0] for r in (
-        db.query(EtfDailyBar.trade_date).filter(EtfDailyBar.code.in_(etf_codes))
-        .distinct().order_by(EtfDailyBar.trade_date.desc()).limit(6).all()
-    )]
+    recent_dates = [
+        r[0]
+        for r in (
+            db.query(EtfDailyBar.trade_date)
+            .filter(EtfDailyBar.code.in_(etf_codes))
+            .distinct()
+            .order_by(EtfDailyBar.trade_date.desc())
+            .limit(6)
+            .all()
+        )
+    ]
     if not recent_dates:
         return {"overview": None, "category_heat": [], "error": "行情数据不足"}
 
     today = recent_dates[0]
-    today_bars = db.query(EtfDailyBar).filter(
-        EtfDailyBar.code.in_(etf_codes), EtfDailyBar.trade_date == today,
-    ).all()
+    today_bars = (
+        db.query(EtfDailyBar)
+        .filter(
+            EtfDailyBar.code.in_(etf_codes),
+            EtfDailyBar.trade_date == today,
+        )
+        .all()
+    )
 
     up_count = down_count = flat_count = 0
     total_amount = pct_sum = 0.0
@@ -777,11 +1071,18 @@ def get_etf_overview(db: Session) -> dict:
     avg_pct = round(pct_sum / valid_count, 2) if valid_count else 0
 
     five_day_dates = recent_dates[:6]
-    fiveday_rows = db.query(
-        EtfDailyBar.code, func.sum(EtfDailyBar.pct_chg).label("sum_chg"),
-    ).filter(
-        EtfDailyBar.code.in_(etf_codes), EtfDailyBar.trade_date.in_(five_day_dates),
-    ).group_by(EtfDailyBar.code).all()
+    fiveday_rows = (
+        db.query(
+            EtfDailyBar.code,
+            func.sum(EtfDailyBar.pct_chg).label("sum_chg"),
+        )
+        .filter(
+            EtfDailyBar.code.in_(etf_codes),
+            EtfDailyBar.trade_date.in_(five_day_dates),
+        )
+        .group_by(EtfDailyBar.code)
+        .all()
+    )
     fiveday_map = {r[0]: round(float(r[1]), 2) for r in fiveday_rows if r[1] is not None}
 
     cat_stats = {}
@@ -793,8 +1094,16 @@ def get_etf_overview(db: Session) -> dict:
         cat = info.category or "其他"
         sub = info.sub_category or ""
         if cat not in cat_stats:
-            cat_stats[cat] = {"up": 0, "down": 0, "flat": 0, "pct_sum": 0, "count": 0,
-                              "pct5d_sum": 0, "pct5d_count": 0, "amount_sum": 0}
+            cat_stats[cat] = {
+                "up": 0,
+                "down": 0,
+                "flat": 0,
+                "pct_sum": 0,
+                "count": 0,
+                "pct5d_sum": 0,
+                "pct5d_count": 0,
+                "amount_sum": 0,
+            }
         s = cat_stats[cat]
         pct = float(b.pct_chg)
         s["pct_sum"] += pct
@@ -826,11 +1135,18 @@ def get_etf_overview(db: Session) -> dict:
     for cat, s in sorted(cat_stats.items(), key=lambda x: x[1]["pct_sum"] / max(x[1]["count"], 1), reverse=True):
         avg_today = round(s["pct_sum"] / max(s["count"], 1), 2)
         avg_5d = round(s["pct5d_sum"] / max(s["pct5d_count"], 1), 2) if s["pct5d_count"] else 0
-        category_heat.append({
-            "category": cat, "avg_pct": avg_today, "avg_pct_5d": avg_5d,
-            "up": s["up"], "down": s["down"], "flat": s["flat"],
-            "total": s["count"], "amount": round(s["amount_sum"], 0),
-        })
+        category_heat.append(
+            {
+                "category": cat,
+                "avg_pct": avg_today,
+                "avg_pct_5d": avg_5d,
+                "up": s["up"],
+                "down": s["down"],
+                "flat": s["flat"],
+                "total": s["count"],
+                "amount": round(s["amount_sum"], 0),
+            }
+        )
 
     up_ratio = up_count / max(valid_count, 1)
     score = round(up_ratio * 50 + min(max(avg_pct + 1, 0), 2) * 25, 0)
@@ -843,11 +1159,17 @@ def get_etf_overview(db: Session) -> dict:
         regime, regime_color, regime_icon = "弱势", "red", "⚫"
 
     overview = {
-        "trade_date": str(today), "total": valid_count,
-        "up": up_count, "down": down_count, "flat": flat_count,
-        "avg_pct": avg_pct, "total_amount": round(total_amount, 0),
-        "score": int(score), "regime": regime,
-        "regime_color": regime_color, "regime_icon": regime_icon,
+        "trade_date": str(today),
+        "total": valid_count,
+        "up": up_count,
+        "down": down_count,
+        "flat": flat_count,
+        "avg_pct": avg_pct,
+        "total_amount": round(total_amount, 0),
+        "score": int(score),
+        "regime": regime,
+        "regime_color": regime_color,
+        "regime_icon": regime_icon,
     }
 
     # 二级分类热力图：按一级分类分组，每组内按 5 日涨跌排序
@@ -855,15 +1177,21 @@ def get_etf_overview(db: Session) -> dict:
     for (cat, sub), ss in sub_stats.items():
         avg_today = round(ss["pct_sum"] / max(ss["count"], 1), 2)
         avg_5d = round(ss["pct5d_sum"] / max(ss["pct5d_count"], 1), 2) if ss["pct5d_count"] else 0
-        sub_category_heat.setdefault(cat, []).append({
-            "sub": sub, "avg_pct": avg_today, "avg_pct_5d": avg_5d, "count": ss["count"],
-        })
+        sub_category_heat.setdefault(cat, []).append(
+            {
+                "sub": sub,
+                "avg_pct": avg_today,
+                "avg_pct_5d": avg_5d,
+                "count": ss["count"],
+            }
+        )
     for cat in sub_category_heat:
         sub_category_heat[cat].sort(key=lambda x: x["avg_pct_5d"], reverse=True)
 
     _, data_verified = get_verified_trade_date("etf")
     return {
-        "overview": overview, "category_heat": category_heat,
+        "overview": overview,
+        "category_heat": category_heat,
         "sub_category_heat": sub_category_heat,
         "data_verified": data_verified,
     }
@@ -879,19 +1207,29 @@ def get_etf_rotation(db: Session, *, days: int = 30) -> dict:
     etf_codes = [e.code for e in etf_all]
     info_map = {e.code: e for e in etf_all}
 
-    trade_dates = [r[0] for r in (
-        db.query(EtfDailyBar.trade_date).filter(EtfDailyBar.code.in_(etf_codes))
-        .distinct().order_by(EtfDailyBar.trade_date.desc()).limit(days).all()
-    )]
+    trade_dates = [
+        r[0]
+        for r in (
+            db.query(EtfDailyBar.trade_date)
+            .filter(EtfDailyBar.code.in_(etf_codes))
+            .distinct()
+            .order_by(EtfDailyBar.trade_date.desc())
+            .limit(days)
+            .all()
+        )
+    ]
     if len(trade_dates) < 3:
         return {"dates": [], "categories": [], "matrix": [], "signals": [], "error": "数据不足"}
     trade_dates.sort()
 
-    bars = db.query(
-        EtfDailyBar.code, EtfDailyBar.trade_date, EtfDailyBar.pct_chg
-    ).filter(
-        EtfDailyBar.code.in_(etf_codes), EtfDailyBar.trade_date.in_(trade_dates),
-    ).all()
+    bars = (
+        db.query(EtfDailyBar.code, EtfDailyBar.trade_date, EtfDailyBar.pct_chg)
+        .filter(
+            EtfDailyBar.code.in_(etf_codes),
+            EtfDailyBar.trade_date.in_(trade_dates),
+        )
+        .all()
+    )
 
     cat_date_pcts = defaultdict(lambda: defaultdict(list))
     sub_date_pcts = defaultdict(lambda: defaultdict(list))  # (category/sub_category) → date → [pct]
@@ -950,8 +1288,10 @@ def get_etf_rotation(db: Session, *, days: int = 30) -> dict:
         v["totals"] = [v["totals"][i] for i in sorted_idx]
 
     return {
-        "dates": date_strs, "categories": categories, "matrix": matrix,
-        "cat_totals": cat_totals, "total_days": len(date_strs),
+        "dates": date_strs,
+        "categories": categories,
+        "matrix": matrix,
+        "cat_totals": cat_totals,
+        "total_days": len(date_strs),
         "sub_rotation": sub_rotation,
     }
-

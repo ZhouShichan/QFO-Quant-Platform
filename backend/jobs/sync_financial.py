@@ -5,21 +5,20 @@ Tushare fina_indicator → Baostock fallback → 写入 stock_financials
 """
 
 import time
-import structlog
-import pandas as pd
-from typing import List, Optional
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+
+import pandas as pd
+import structlog
 
 from core.database import db_session
 from jobs.sync_base import report_progress, write_watermark
-from settings import FINANCIAL_WORKERS, FINANCIAL_SLEEP
+from settings import FINANCIAL_SLEEP, FINANCIAL_WORKERS
 
 log = structlog.get_logger("sync_financial")
 
 
-def sync_financial(ts_source, fin_writer, codes: List[str],
-                   task_id: Optional[str] = None, force_refill: bool = False):
+def sync_financial(ts_source, fin_writer, codes: list[str], task_id: str | None = None, force_refill: bool = False):
     """同步财务数据（面向 DataSyncService 的函数入口）"""
     log.info("sync_financial_start", count=len(codes), force_refill=force_refill)
     t_start = time.time()
@@ -29,11 +28,13 @@ def sync_financial(ts_source, fin_writer, codes: List[str],
 
     if task_id:
         try:
-            from utils.task_store import task_store, TaskStatus
-            task_store.update_task(task_id, TaskStatus.RUNNING, result={
-                "progress": 0, "total": total,
-                "message": f"开始同步财务数据，共 {total} 只股票..."
-            })
+            from utils.task_store import TaskStatus, task_store
+
+            task_store.update_task(
+                task_id,
+                TaskStatus.RUNNING,
+                result={"progress": 0, "total": total, "message": f"开始同步财务数据，共 {total} 只股票..."},
+            )
         except Exception:
             pass
 
@@ -48,22 +49,32 @@ def sync_financial(ts_source, fin_writer, codes: List[str],
     if not force_refill:
         try:
             from datetime import timedelta
+
             cutoff = (datetime.now() - timedelta(days=FINANCIAL_SKIP_DAYS)).strftime("%Y-%m-%d")
             with db_session() as db:
                 from sqlalchemy import text as _sa_text
-                result = db.execute(_sa_text(
-                    "SELECT DISTINCT code FROM stock_financials WHERE updated_at >= :cutoff"
-                ), {"cutoff": cutoff})
+
+                result = db.execute(
+                    _sa_text("SELECT DISTINCT code FROM stock_financials WHERE updated_at >= :cutoff"),
+                    {"cutoff": cutoff},
+                )
                 already_synced = {row[0] for row in result}
             need_fetch = [c for c in codes if c not in already_synced]
             skipped = total - len(need_fetch)
             if skipped > 0:
-                log.info("financial_incremental_skip",
-                         skipped=skipped, need_fetch=len(need_fetch),
-                         cutoff_days=FINANCIAL_SKIP_DAYS)
+                log.info(
+                    "financial_incremental_skip",
+                    skipped=skipped,
+                    need_fetch=len(need_fetch),
+                    cutoff_days=FINANCIAL_SKIP_DAYS,
+                )
                 if task_id:
-                    report_progress(task_id, 0, len(need_fetch) or 1,
-                                    f"增量检测：跳过 {skipped} 只已有近期数据，实际拉取 {len(need_fetch)} 只")
+                    report_progress(
+                        task_id,
+                        0,
+                        len(need_fetch) or 1,
+                        f"增量检测：跳过 {skipped} 只已有近期数据，实际拉取 {len(need_fetch)} 只",
+                    )
         except Exception as e:
             log.warning("financial_incremental_check_failed", error=str(e))
             need_fetch = codes
@@ -75,10 +86,13 @@ def sync_financial(ts_source, fin_writer, codes: List[str],
         log.info("financial_all_up_to_date", skipped=len(codes))
         if task_id:
             try:
-                from utils.task_store import task_store, TaskStatus
-                task_store.update_task(task_id, TaskStatus.COMPLETED, result={
-                    "progress": 100, "message": f"财务数据均为最新 ✅ ({len(codes)} 只全部跳过)"
-                })
+                from utils.task_store import TaskStatus, task_store
+
+                task_store.update_task(
+                    task_id,
+                    TaskStatus.COMPLETED,
+                    result={"progress": 100, "message": f"财务数据均为最新 ✅ ({len(codes)} 只全部跳过)"},
+                )
             except Exception:
                 pass
         return
@@ -87,10 +101,7 @@ def sync_financial(ts_source, fin_writer, codes: List[str],
     no_data_count = 0
 
     with ThreadPoolExecutor(max_workers=FINANCIAL_WORKERS) as executor:
-        future_to_code = {
-            executor.submit(_fetch_financial, ts_source, code): code
-            for code in need_fetch
-        }
+        future_to_code = {executor.submit(_fetch_financial, ts_source, code): code for code in need_fetch}
 
         for future in as_completed(future_to_code):
             code = future_to_code[future]
@@ -109,34 +120,40 @@ def sync_financial(ts_source, fin_writer, codes: List[str],
                 error_count += 1
 
             if task_id:
-                report_progress(task_id, completed_count, total,
-                                f"财务数据: {completed_count}/{total} ({code})")
+                report_progress(task_id, completed_count, total, f"财务数据: {completed_count}/{total} ({code})")
             if completed_count % 50 == 0:
                 log.info("financial_progress", done=completed_count, total=total)
 
-    log.info("sync_financial_done", success=success_count, no_data=no_data_count,
-             errors=error_count, total=total)
+    log.info("sync_financial_done", success=success_count, no_data=no_data_count, errors=error_count, total=total)
     # 财务数据全市场只有一份，不区分 all/pool/hs300，固定 mode="any"
     # ⚠️ should_skip 查询时也必须用 mode="any"，参见 data_sync_service._should_skip
     wm_status = "success" if success_count > 0 else "failed"
     write_watermark("financials", "any", None, t_start, wm_status)
     if wm_status == "failed":
-        log.warning("financial_zero_success_watermark_failed",
-                    total=total, errors=error_count)
+        log.warning("financial_zero_success_watermark_failed", total=total, errors=error_count)
 
     if task_id:
         try:
-            from utils.task_store import task_store, TaskStatus
+            from utils.task_store import TaskStatus, task_store
+
             duration = round(time.time() - t_start, 1)
             if success_count == 0:
-                msg = (f"⚠️ 财务数据同步完成但 0 只成功写入 ({total} 只处理，耗时 {duration}s)。"
-                       f"可能原因：① Tushare积分不足（fina_indicator需600+）② 网络超时")
+                msg = (
+                    f"⚠️ 财务数据同步完成但 0 只成功写入 ({total} 只处理，耗时 {duration}s)。"
+                    f"可能原因：① Tushare积分不足（fina_indicator需600+）② 网络超时"
+                )
             else:
                 msg = f"财务数据同步完成 ✅ ({success_count}/{total} 只，耗时 {duration}s)"
-            task_store.update_task(task_id, TaskStatus.COMPLETED, result={
-                "progress": 100, "total": total, "success": success_count,
-                "message": msg,
-            })
+            task_store.update_task(
+                task_id,
+                TaskStatus.COMPLETED,
+                result={
+                    "progress": 100,
+                    "total": total,
+                    "success": success_count,
+                    "message": msg,
+                },
+            )
         except Exception:
             pass
 
@@ -153,26 +170,30 @@ def _fetch_financial(ts_source, code: str):
         def _fetch_fina():
             return ts_source.pro.fina_indicator(
                 ts_code=code,
-                fields="ts_code,ann_date,end_date,roe,roa,grossprofit_margin,"
-                       "netprofit_margin,or_yoy,netprofit_yoy,eps",
+                fields="ts_code,ann_date,end_date,roe,roa,grossprofit_margin,netprofit_margin,or_yoy,netprofit_yoy,eps",
             )
 
         df = _fetch_fina()
         if df is not None and not df.empty:
             from data_sources.tushare_source import validate_tushare_fields
-            validate_tushare_fields(df,
+
+            validate_tushare_fields(
+                df,
                 ["roe", "roa", "grossprofit_margin", "netprofit_margin", "or_yoy", "netprofit_yoy", "eps"],
-                api_name="fina_indicator")
+                api_name="fina_indicator",
+            )
             tushare_ok = True
 
             # 追加现金流数据（经营活动现金流净额）
             try:
+
                 @tushare_module.with_tushare_retry(max_retries=1, delay=0.5)
                 def _fetch_cf():
                     return ts_source.pro.cashflow(
                         ts_code=code,
                         fields="ts_code,end_date,n_cashflow_act",
                     )
+
                 df_cf = _fetch_cf()
                 if df_cf is not None and not df_cf.empty:
                     df_cf = df_cf.drop_duplicates(subset=["end_date"], keep="first")
@@ -182,12 +203,14 @@ def _fetch_financial(ts_source, code: str):
 
             # 追加资产负债率（从 balancesheet 计算）
             try:
+
                 @tushare_module.with_tushare_retry(max_retries=1, delay=0.5)
                 def _fetch_bs():
                     return ts_source.pro.balancesheet(
                         ts_code=code,
                         fields="ts_code,end_date,total_hldr_eqy_exc_min_int,total_assets",
                     )
+
                 df_bs = _fetch_bs()
                 if df_bs is not None and not df_bs.empty:
                     df_bs = df_bs.drop_duplicates(subset=["end_date"], keep="first")
@@ -206,10 +229,12 @@ def _fetch_financial(ts_source, code: str):
     if not tushare_ok:
         try:
             from data_sources.baostock_source import BaostockSource
+
             BaostockSource._login()  # 单例登录，已登录则直接返回
             bs = BaostockSource._bs_module
             short_code = code.split(".")[0] if "." in code else code
             from utils.asset_type import to_bs_code
+
             bs_code = to_bs_code(short_code)
 
             now = datetime.now()
@@ -227,19 +252,20 @@ def _fetch_financial(ts_source, code: str):
 
             if profit_rows:
                 df_profit = pd.DataFrame(profit_rows, columns=rs.fields)
-                df = pd.DataFrame({
-                    "end_date": df_profit.get("statDate", pd.Series()),
-                    "roe": pd.to_numeric(df_profit.get("roeAvg", pd.Series()), errors="coerce"),
-                    "netprofit_margin": pd.to_numeric(df_profit.get("npMargin", pd.Series()), errors="coerce"),
-                    "grossprofit_margin": pd.to_numeric(df_profit.get("gpMargin", pd.Series()), errors="coerce"),
-                    "roa": None,
-                    "revenue_yoy": None,
-                    "netprofit_yoy": None,
-                    "basic_eps": pd.to_numeric(df_profit.get("epsTTM", pd.Series()), errors="coerce"),
-                })
+                df = pd.DataFrame(
+                    {
+                        "end_date": df_profit.get("statDate", pd.Series()),
+                        "roe": pd.to_numeric(df_profit.get("roeAvg", pd.Series()), errors="coerce"),
+                        "netprofit_margin": pd.to_numeric(df_profit.get("npMargin", pd.Series()), errors="coerce"),
+                        "grossprofit_margin": pd.to_numeric(df_profit.get("gpMargin", pd.Series()), errors="coerce"),
+                        "roa": None,
+                        "revenue_yoy": None,
+                        "netprofit_yoy": None,
+                        "basic_eps": pd.to_numeric(df_profit.get("epsTTM", pd.Series()), errors="coerce"),
+                    }
+                )
         except Exception as e:
             log.warning("financial_baostock_failed", code=code, error=str(e))
 
     time.sleep(FINANCIAL_SLEEP)
     return code, df
-

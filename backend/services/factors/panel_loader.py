@@ -9,17 +9,17 @@
     panel['close']  →  DataFrame(252 rows × 2 cols)
 """
 
-import structlog
+from hashlib import md5
+
 import numpy as np
 import pandas as pd
-from typing import List, Optional
-from hashlib import md5
+import structlog
 
 log = structlog.get_logger(__name__)
 
 # 可用的面板字段及其来源
-OHLCV_FIELDS = ['open', 'high', 'low', 'close', 'volume', 'amount', 'pct_chg']
-FACTOR_FIELDS = ['pe_ttm', 'pb', 'ps_ttm', 'turnover_rate', 'total_mv', 'dv_ttm', 'circ_mv']
+OHLCV_FIELDS = ["open", "high", "low", "close", "volume", "amount", "pct_chg"]
+FACTOR_FIELDS = ["pe_ttm", "pb", "ps_ttm", "turnover_rate", "total_mv", "dv_ttm", "circ_mv"]
 ALL_FIELDS = OHLCV_FIELDS + FACTOR_FIELDS
 
 # 面板缓存（避免重复查询，key = hash(codes + dates + fields)）
@@ -33,10 +33,10 @@ def _cache_key(codes: list, start_date: str, end_date: str, fields: list) -> str
 
 
 def load_panel(
-    codes: List[str],
+    codes: list[str],
     start_date: str,
     end_date: str,
-    fields: Optional[List[str]] = None,
+    fields: list[str] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """
     加载面板数据。
@@ -82,14 +82,17 @@ def load_panel(
     _panel_cache[ck] = panel
 
     field_shapes = {k: v.shape for k, v in panel.items()}
-    log.info("panel_loaded", codes=len(codes), fields=list(panel.keys()),
-             shapes=field_shapes, date_range=f"{start_date}~{end_date}")
+    log.info(
+        "panel_loaded",
+        codes=len(codes),
+        fields=list(panel.keys()),
+        shapes=field_shapes,
+        date_range=f"{start_date}~{end_date}",
+    )
     return panel
 
 
-def _load_bar_panel(
-    codes: list, start_date: str, end_date: str, fields: list
-) -> dict[str, pd.DataFrame]:
+def _load_bar_panel(codes: list, start_date: str, end_date: str, fields: list) -> dict[str, pd.DataFrame]:
     """从 StockDailyBar 加载行情面板"""
     from core.database import db_session
     from models.quant_data import StockDailyBar
@@ -114,15 +117,15 @@ def _load_bar_panel(
     if not rows:
         return {}
 
-    col_names = ['code', 'trade_date'] + [f for f in fields if hasattr(StockDailyBar, f)]
+    col_names = ["code", "trade_date"] + [f for f in fields if hasattr(StockDailyBar, f)]
     df = pd.DataFrame(rows, columns=col_names)
-    df['trade_date'] = pd.to_datetime(df['trade_date'])
+    df["trade_date"] = pd.to_datetime(df["trade_date"])
 
     panel = {}
     for field in fields:
         if field not in df.columns:
             continue
-        pivot = df.pivot_table(index='trade_date', columns='code', values=field, aggfunc='last')
+        pivot = df.pivot_table(index="trade_date", columns="code", values=field, aggfunc="last")
         pivot = pivot.sort_index()
         # 确保所有 codes 都在列中（缺失的填 NaN）
         for c in codes:
@@ -134,9 +137,7 @@ def _load_bar_panel(
     return panel
 
 
-def _load_factor_panel(
-    codes: list, start_date: str, end_date: str, fields: list
-) -> dict[str, pd.DataFrame]:
+def _load_factor_panel(codes: list, start_date: str, end_date: str, fields: list) -> dict[str, pd.DataFrame]:
     """从 StockDailyFactor 加载估值因子面板"""
     from core.database import db_session
     from models.quant_data import StockDailyFactor
@@ -161,15 +162,15 @@ def _load_factor_panel(
     if not rows:
         return {}
 
-    col_names = ['code', 'trade_date'] + [f for f in fields if hasattr(StockDailyFactor, f)]
+    col_names = ["code", "trade_date"] + [f for f in fields if hasattr(StockDailyFactor, f)]
     df = pd.DataFrame(rows, columns=col_names)
-    df['trade_date'] = pd.to_datetime(df['trade_date'])
+    df["trade_date"] = pd.to_datetime(df["trade_date"])
 
     panel = {}
     for field in fields:
         if field not in df.columns:
             continue
-        pivot = df.pivot_table(index='trade_date', columns='code', values=field, aggfunc='last')
+        pivot = df.pivot_table(index="trade_date", columns="code", values=field, aggfunc="last")
         pivot = pivot.sort_index()
         for c in codes:
             if c not in pivot.columns:
@@ -180,17 +181,13 @@ def _load_factor_panel(
     return panel
 
 
-def load_industry_map(codes: List[str]) -> dict[str, str]:
+def load_industry_map(codes: list[str]) -> dict[str, str]:
     """加载股票→行业映射 {code: industry_name}"""
     from core.database import db_session
     from models.quant_data import StockBasicInfo
 
     with db_session() as db:
-        rows = (
-            db.query(StockBasicInfo.code, StockBasicInfo.industry)
-            .filter(StockBasicInfo.code.in_(codes))
-            .all()
-        )
+        rows = db.query(StockBasicInfo.code, StockBasicInfo.industry).filter(StockBasicInfo.code.in_(codes)).all()
     return {r.code: (r.industry or "其他") for r in rows}
 
 
@@ -201,8 +198,8 @@ def get_trade_dates(start_date: str, end_date: str) -> list[str]:
 
     with db_session() as db:
         dates = [
-            str(r[0]) for r in
-            db.query(StockDailyBar.trade_date)
+            str(r[0])
+            for r in db.query(StockDailyBar.trade_date)
             .filter(
                 StockDailyBar.trade_date >= start_date,
                 StockDailyBar.trade_date <= end_date,
@@ -214,24 +211,22 @@ def get_trade_dates(start_date: str, end_date: str) -> list[str]:
     return dates
 
 
-def get_rebalance_dates(
-    trade_dates: list[str], freq: str = 'monthly'
-) -> list[str]:
+def get_rebalance_dates(trade_dates: list[str], freq: str = "monthly") -> list[str]:
     """从交易日列表中提取调仓日期（月末/周末/季末）"""
     if not trade_dates:
         return []
 
     dates = pd.to_datetime(trade_dates)
 
-    if freq == 'weekly':
+    if freq == "weekly":
         # 每周最后一个交易日
         groups = dates.to_series().groupby(dates.isocalendar().week)
         return [str(g.iloc[-1].date()) for _, g in groups]
-    elif freq == 'quarterly':
-        groups = dates.to_series().groupby(dates.to_period('Q'))
+    elif freq == "quarterly":
+        groups = dates.to_series().groupby(dates.to_period("Q"))
         return [str(g.iloc[-1].date()) for _, g in groups]
     else:  # monthly
-        groups = dates.to_series().groupby(dates.to_period('M'))
+        groups = dates.to_series().groupby(dates.to_period("M"))
         return [str(g.iloc[-1].date()) for _, g in groups]
 
 

@@ -4,9 +4,10 @@
 批量 Upsert StockDailyBar，替代逐行 ORM 操作。
 """
 
-import structlog
-import pandas as pd
 from datetime import date as date_type
+
+import pandas as pd
+import structlog
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -56,8 +57,24 @@ class BarWriter:
         df["trade_date"] = trade_date
 
         # 保留实际存在的列
-        keep = [c for c in ["code", "trade_date", "open", "high", "low", "close",
-                            "volume", "amount", "pre_close", "change", "pct_chg", "adj_factor"] if c in df.columns]
+        keep = [
+            c
+            for c in [
+                "code",
+                "trade_date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "amount",
+                "pre_close",
+                "change",
+                "pct_chg",
+                "adj_factor",
+            ]
+            if c in df.columns
+        ]
         df = df[keep]
 
         synced = set(df["code"].unique())
@@ -67,8 +84,7 @@ class BarWriter:
 
     # ---------- 按股票写入（供 SingleFetcher / fallback 使用） ----------
 
-    def upsert_single(self, db: Session, code: str, df_bars: pd.DataFrame,
-                      start_date: str, end_date: str):
+    def upsert_single(self, db: Session, code: str, df_bars: pd.DataFrame, start_date: str, end_date: str):
         """
         写入单只股票的行情数据（先 delete range 再 append）。
         """
@@ -86,13 +102,17 @@ class BarWriter:
         # 确保 trade_date 是 date 对象
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
 
-        keep = [c for c in ["code", "trade_date", "open", "high", "low", "close", "volume", "amount", "adj_factor"]
-                if c in df.columns]
+        keep = [
+            c
+            for c in ["code", "trade_date", "open", "high", "low", "close", "volume", "amount", "adj_factor"]
+            if c in df.columns
+        ]
         df = df[keep]
 
-        db.execute(text(
-            "DELETE FROM stock_daily_bars WHERE code=:code AND trade_date >= :start AND trade_date <= :end"
-        ), {"code": code, "start": start_date, "end": end_date})
+        db.execute(
+            text("DELETE FROM stock_daily_bars WHERE code=:code AND trade_date >= :start AND trade_date <= :end"),
+            {"code": code, "start": start_date, "end": end_date},
+        )
         db.flush()
 
         # 使用同一 db 会话的 _bulk_upsert，保证 DELETE+INSERT 在一个事务内

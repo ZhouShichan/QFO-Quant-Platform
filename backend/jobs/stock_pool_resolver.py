@@ -5,8 +5,8 @@
 """
 
 import time
+
 import structlog
-from typing import List, Optional, Dict, Tuple
 
 log = structlog.get_logger("stock_pool")
 
@@ -26,7 +26,7 @@ _INDEX_MAP = {
 
 # 宽基指数成分股内存缓存：{mode: (codes, cached_at_ts)}
 # TTL = 7天，避免每次 full_sync 都重复调 Tushare index_weight
-_INDEX_CACHE: Dict[str, Tuple[List[str], float]] = {}
+_INDEX_CACHE: dict[str, tuple[list[str], float]] = {}
 _INDEX_CACHE_TTL = 7 * 24 * 3600  # 7天（秒）
 
 
@@ -36,7 +36,7 @@ class StockPoolResolver:
     def __init__(self, ts_source):
         self._ts = ts_source
 
-    def resolve(self, mode: str, custom_codes: Optional[List[str]] = None) -> List[str]:
+    def resolve(self, mode: str, custom_codes: list[str] | None = None) -> list[str]:
         """
         解析目标股票池。
 
@@ -53,6 +53,7 @@ class StockPoolResolver:
                 # 前端可能传入无后缀 code（如 "000001"），统一规范化为 DB 格式
                 # 用 to_db_code 而非 to_ts_code：可转债在 DB 中存纯 6 位码
                 from utils.bar_query import to_db_code
+
                 normalized = [to_db_code(c) for c in custom_codes]
                 log.info("resolve_pool", mode=mode, source="custom", count=len(normalized))
                 return normalized
@@ -71,18 +72,16 @@ class StockPoolResolver:
         log.warning("resolve_pool_fallback", mode=mode)
         return self._resolve_pool_fallback()
 
-    def _resolve_index_cached(self, mode: str) -> List[str]:
+    def _resolve_index_cached(self, mode: str) -> list[str]:
         """带 TTL 缓存的宽基指数成分解析（进程级内存缓存，7天过期）"""
         cached = _INDEX_CACHE.get(mode)
         if cached:
             codes, cached_at = cached
             age = time.time() - cached_at
             if age < _INDEX_CACHE_TTL:
-                log.info("resolve_index_cache_hit", mode=mode,
-                         count=len(codes), age_hours=round(age / 3600, 1))
+                log.info("resolve_index_cache_hit", mode=mode, count=len(codes), age_hours=round(age / 3600, 1))
                 return codes
-            log.info("resolve_index_cache_expired", mode=mode,
-                     age_hours=round(age / 3600, 1))
+            log.info("resolve_index_cache_expired", mode=mode, age_hours=round(age / 3600, 1))
 
         codes = self._resolve_index(mode)
         if codes and codes != _STATIC_POOLS["pool"]:
@@ -90,7 +89,7 @@ class StockPoolResolver:
             log.info("resolve_index_cache_updated", mode=mode, count=len(codes))
         return codes
 
-    def _resolve_index(self, mode: str) -> List[str]:
+    def _resolve_index(self, mode: str) -> list[str]:
         """从 Tushare index_weight 拉取动态成分股"""
         index_code, index_name = _INDEX_MAP[mode]
         try:
@@ -112,15 +111,14 @@ class StockPoolResolver:
 
         return self._resolve_pool_fallback()
 
-    def _resolve_pool_fallback(self) -> List[str]:
+    def _resolve_pool_fallback(self) -> list[str]:
         """pool 无 custom_codes 时：从本地 StockBasicInfo 取前20只活跃股票作为演示池"""
         try:
             from core.database import db_session
             from models.quant_data import StockBasicInfo
+
             with db_session() as db:
-                rows = db.query(StockBasicInfo.code).filter(
-                    StockBasicInfo.is_active == True
-                ).limit(20).all()
+                rows = db.query(StockBasicInfo.code).filter(StockBasicInfo.is_active == True).limit(20).all()
                 if rows:
                     codes = [r.code for r in rows]
                     log.info("resolve_pool_fallback", count=len(codes))
@@ -129,7 +127,7 @@ class StockPoolResolver:
             log.error("resolve_pool_fallback_failed", error=str(e))
         return ["600519.SH", "000001.SZ"]  # 最终兜底
 
-    def _resolve_all(self) -> List[str]:
+    def _resolve_all(self) -> list[str]:
         """从本地 StockBasicInfo 表获取全市场"""
         try:
             from core.database import db_session

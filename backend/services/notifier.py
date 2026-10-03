@@ -10,7 +10,6 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Optional
 
 import requests
 import structlog
@@ -64,19 +63,21 @@ CHANNEL_KEYS = ("telegram", "wechat", "pushplus", "serverchan", "feishu", "webho
 
 # ── 配置读写 ──
 
+
 def load_config() -> dict:
     """读取推送配置，不存在则从 .env 迁移并生成默认文件"""
     if _CONFIG_FILE.exists():
         try:
-            with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(_CONFIG_FILE, encoding="utf-8") as f:
                 cfg = json.load(f)
             # 补全缺失的 key（兼容旧配置文件）
             from copy import deepcopy
+
             for key, defaults in _DEFAULT_CONFIG.items():
                 if key not in cfg:
                     cfg[key] = deepcopy(defaults)
             return cfg
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             pass
 
     # 首次：从 .env 迁移
@@ -122,7 +123,8 @@ def _migrate_from_env() -> dict:
 
 # ── 发送函数 ──
 
-def send_telegram(content: str, cfg: Optional[dict] = None) -> bool:
+
+def send_telegram(content: str, cfg: dict | None = None) -> bool:
     """发送 Telegram 消息（Markdown 格式）"""
     tg = (cfg or load_config()).get("telegram", {})
     if not tg.get("enabled"):
@@ -135,8 +137,8 @@ def send_telegram(content: str, cfg: Optional[dict] = None) -> bool:
 
     # Telegram MarkdownV2 转义
     escaped = content
-    for ch in r'_[]()~`>#+-=|{}.!':
-        escaped = escaped.replace(ch, f'\\{ch}')
+    for ch in r"_[]()~`>#+-=|{}.!":
+        escaped = escaped.replace(ch, f"\\{ch}")
 
     proxies = {"https": tg.get("proxy")} if tg.get("proxy") else None
 
@@ -166,7 +168,7 @@ def send_telegram(content: str, cfg: Optional[dict] = None) -> bool:
         return False
 
 
-def send_wechat_work(content: str, cfg: Optional[dict] = None) -> bool:
+def send_wechat_work(content: str, cfg: dict | None = None) -> bool:
     """发送企业微信 Markdown 消息"""
     wc = (cfg or load_config()).get("wechat", {})
     if not wc.get("enabled"):
@@ -189,7 +191,7 @@ def send_wechat_work(content: str, cfg: Optional[dict] = None) -> bool:
         return False
 
 
-def send_pushplus(content: str, cfg: Optional[dict] = None) -> bool:
+def send_pushplus(content: str, cfg: dict | None = None) -> bool:
     """发送 PushPlus 消息（微信公众号推送）"""
     pp = (cfg or load_config()).get("pushplus", {})
     if not pp.get("enabled"):
@@ -223,7 +225,7 @@ def send_pushplus(content: str, cfg: Optional[dict] = None) -> bool:
         return False
 
 
-def send_serverchan(content: str, cfg: Optional[dict] = None) -> bool:
+def send_serverchan(content: str, cfg: dict | None = None) -> bool:
     """发送 Server酱 消息（手机 APP 推送）"""
     sc = (cfg or load_config()).get("serverchan", {})
     if not sc.get("enabled"):
@@ -260,7 +262,7 @@ def send_serverchan(content: str, cfg: Optional[dict] = None) -> bool:
         return False
 
 
-def send_feishu(content: str, cfg: Optional[dict] = None) -> bool:
+def send_feishu(content: str, cfg: dict | None = None) -> bool:
     """发送飞书消息（lark_md 交互卡片，纯文本回退）"""
     fs = (cfg or load_config()).get("feishu", {})
     if not fs.get("enabled"):
@@ -279,10 +281,12 @@ def send_feishu(content: str, cfg: Optional[dict] = None) -> bool:
                 "header": {
                     "title": {"tag": "plain_text", "content": "量化平台通知"},
                 },
-                "elements": [{
-                    "tag": "div",
-                    "text": {"tag": "lark_md", "content": content},
-                }],
+                "elements": [
+                    {
+                        "tag": "div",
+                        "text": {"tag": "lark_md", "content": content},
+                    }
+                ],
             },
         }
         resp = requests.post(webhook, json=payload, timeout=15)
@@ -308,7 +312,7 @@ def send_feishu(content: str, cfg: Optional[dict] = None) -> bool:
         return False
 
 
-def send_webhook(content: str, cfg: Optional[dict] = None) -> bool:
+def send_webhook(content: str, cfg: dict | None = None) -> bool:
     """发送到自定义 Webhook（自动识别钉钉 URL 切换 payload 格式）"""
     wh = (cfg or load_config()).get("webhook", {})
     if not wh.get("enabled"):
@@ -362,6 +366,7 @@ CHANNEL_LABELS = {
 def is_push_cooling(cfg: dict) -> bool:
     """检查精选推送是否在冷却期内，防止短时间连推"""
     from datetime import datetime
+
     last = cfg.get("last_push")
     if not last or not last.get("time"):
         return False

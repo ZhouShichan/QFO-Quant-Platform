@@ -5,8 +5,9 @@
 """
 
 from fastapi import APIRouter
-from routers.screener_market import router as market_router
+
 from routers.screener_etf import router as etf_router
+from routers.screener_market import router as market_router
 
 router = APIRouter(prefix="/screener", tags=["Screener"])
 router.include_router(market_router)

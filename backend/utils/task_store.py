@@ -1,15 +1,16 @@
-import uuid
 import time
-from typing import Dict, Any, Optional
+import uuid
 from enum import Enum
 from threading import Lock
+from typing import Any
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(str, Enum):  # noqa: UP042  # 保持 str,Enum：str() 输出 "TaskStatus.成员" 格式被现有序列化/展示依赖
     """任务状态枚举"""
+
     PENDING = "pending"
     RUNNING = "running"
-    IN_PROGRESS = "running"    # 废弃，统一用 RUNNING
+    IN_PROGRESS = "running"  # 废弃，统一用 RUNNING
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -18,7 +19,7 @@ class TaskStore:
     """简单的内存任务存储，带防重复提交功能"""
 
     def __init__(self):
-        self._tasks: Dict[str, Dict[str, Any]] = {}
+        self._tasks: dict[str, dict[str, Any]] = {}
         self._lock = Lock()
 
     def create_task(self, task_type: str) -> str:
@@ -55,6 +56,7 @@ class TaskStore:
         """将任务状态推送到所有 WebSocket 连接（线程安全）"""
         try:
             from routers.ws import manager
+
             task = self._tasks.get(task_id)
             if not task or not manager.active:
                 return
@@ -66,18 +68,18 @@ class TaskStore:
                     "status": task["status"],
                     "result": task.get("result"),
                     "error": task.get("error"),
-                }
+                },
             }
             manager.broadcast_threadsafe(msg)
         except Exception:
             pass  # best-effort，绝不影响主流程
 
-    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+    def get_task(self, task_id: str) -> dict[str, Any] | None:
         """获取任务信息"""
         with self._lock:
             return self._tasks.get(task_id)
 
-    def get_running_task(self, task_type: str) -> Optional[str]:
+    def get_running_task(self, task_type: str) -> str | None:
         """
         返回当前正在运行的同类型任务 ID。
         若不存在则返回 None。
@@ -86,12 +88,13 @@ class TaskStore:
         with self._lock:
             for tid, task in self._tasks.items():
                 if task["type"] == task_type and task["status"] in (
-                    TaskStatus.PENDING, TaskStatus.RUNNING,
+                    TaskStatus.PENDING,
+                    TaskStatus.RUNNING,
                 ):
                     return tid
         return None
 
-    def has_any_running_sync(self) -> Optional[str]:
+    def has_any_running_sync(self) -> str | None:
         """
         检查是否有任何同步类任务在运行（跨类型互斥）。
         SQLite 不支持并发写，需要阻止同时运行多个写任务。
@@ -99,7 +102,7 @@ class TaskStore:
         """
         sync_keywords = ("sync", "signal")
         with self._lock:
-            for tid, task in self._tasks.items():
+            for _tid, task in self._tasks.items():
                 if task["status"] in (TaskStatus.PENDING, TaskStatus.RUNNING):
                     if any(kw in task["type"] for kw in sync_keywords):
                         return task["type"]
@@ -110,9 +113,12 @@ class TaskStore:
         current_time = time.time()
         with self._lock:
             to_remove = [
-                tid for tid, task in self._tasks.items()
-                if (current_time - task["updated_at"] > max_age_seconds
-                    and task["status"] in (TaskStatus.COMPLETED, TaskStatus.FAILED))
+                tid
+                for tid, task in self._tasks.items()
+                if (
+                    current_time - task["updated_at"] > max_age_seconds
+                    and task["status"] in (TaskStatus.COMPLETED, TaskStatus.FAILED)
+                )
             ]
             for tid in to_remove:
                 del self._tasks[tid]

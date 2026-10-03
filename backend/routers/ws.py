@@ -7,9 +7,9 @@ HTTP API 完全保留不变，WebSocket 是额外的推送通道。
 
 import asyncio
 import json
+
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import List, Optional
 
 log = structlog.get_logger("ws")
 router = APIRouter()
@@ -19,8 +19,8 @@ class ConnectionManager:
     """管理 WebSocket 连接，支持线程安全广播"""
 
     def __init__(self):
-        self.active: List[WebSocket] = []
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self.active: list[WebSocket] = []
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     async def connect(self, ws: WebSocket):
         await ws.accept()

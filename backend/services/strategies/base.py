@@ -6,21 +6,23 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any
+
 import numpy as np
 
 
 @dataclass
 class StrategyParam:
     """策略参数描述（前端用来渲染输入控件）"""
-    name: str             # 参数键名（传后端用）
-    label: str            # 中文标签（前端显示）
-    type: str             # int / float / select
-    default: Any          # 默认值
-    min: Optional[float] = None
-    max: Optional[float] = None
-    step: Optional[float] = None
-    options: Optional[list] = None  # select: [{value, label}]
+
+    name: str  # 参数键名（传后端用）
+    label: str  # 中文标签（前端显示）
+    type: str  # int / float / select
+    default: Any  # 默认值
+    min: float | None = None
+    max: float | None = None
+    step: float | None = None
+    options: list | None = None  # select: [{value, label}]
 
 
 class BaseStrategy(ABC):
@@ -38,7 +40,7 @@ class BaseStrategy(ABC):
     allow_reentry: bool = False
 
     @abstractmethod
-    def params_schema(self) -> List[StrategyParam]:
+    def params_schema(self) -> list[StrategyParam]:
         """返回该策略的可配参数列表"""
 
     @abstractmethod
@@ -57,11 +59,20 @@ class BaseStrategy(ABC):
             "desc": self.desc,
             "detail": self.detail,
             "params": [
-                {k: v for k, v in {
-                    "name": p.name, "label": p.label, "type": p.type,
-                    "default": p.default, "min": p.min, "max": p.max,
-                    "step": p.step, "options": p.options,
-                }.items() if v is not None}
+                {
+                    k: v
+                    for k, v in {
+                        "name": p.name,
+                        "label": p.label,
+                        "type": p.type,
+                        "default": p.default,
+                        "min": p.min,
+                        "max": p.max,
+                        "step": p.step,
+                        "options": p.options,
+                    }.items()
+                    if v is not None
+                }
                 for p in self.params_schema()
             ],
         }
@@ -69,5 +80,4 @@ class BaseStrategy(ABC):
 
 # ── 公用工具函数（实现已移至 utils/indicators.py，此处 re-export 保持向后兼容）──
 
-from utils.indicators import sma, ema  # noqa: F401
-
+from utils.indicators import ema, sma  # noqa: F401

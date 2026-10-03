@@ -1,6 +1,7 @@
 """放量突破策略"""
 
 import numpy as np
+
 from services.strategies.base import BaseStrategy, StrategyParam, sma
 
 
@@ -33,15 +34,16 @@ class VolumeBreakoutStrategy(BaseStrategy):
             avg_vol = sma(volume, vol_days)
         else:
             import structlog
+
             structlog.get_logger("strategy").warning(
                 "volume_breakout_no_volume",
                 msg="无成交量数据，退化为纯价格突破策略",
             )
 
         for t in range(price_days, T):
-            window = prices[t - price_days:t]
+            window = prices[t - price_days : t]
             high_n = np.nanmax(window, axis=0)  # N日最高价
-            low_n = np.nanmin(window, axis=0)   # N日最低价
+            low_n = np.nanmin(window, axis=0)  # N日最低价
 
             # 买入：突破N日最高价
             breakout = prices[t] > high_n

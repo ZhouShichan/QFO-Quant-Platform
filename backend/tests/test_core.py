@@ -10,9 +10,9 @@
 运行：  cd backend && .venv\\Scripts\\pytest tests/ -v
 """
 
-import sys
-import os
 import datetime
+import os
+import sys
 from unittest.mock import MagicMock, patch
 
 # 让 backend 根目录可 import
@@ -28,12 +28,10 @@ class TestIncrementalChecker:
     def _make_checker(self, db_stats: dict):
         """注入 mock db_session，返回真实 IncrementalChecker 实例"""
         from jobs.incremental_checker import IncrementalChecker
+
         checker = IncrementalChecker()
 
-        mock_result = [
-            (code, info["max_date"], info["bar_count"])
-            for code, info in db_stats.items()
-        ]
+        mock_result = [(code, info["max_date"], info["bar_count"]) for code, info in db_stats.items()]
         mock_execute = MagicMock()
         mock_execute.fetchall = MagicMock(return_value=mock_result)  # 兼容旧接口
         # 兼容 for row in result 迭代
@@ -52,6 +50,7 @@ class TestIncrementalChecker:
     def test_skip_when_up_to_date(self):
         """数据完整时应跳过（返回 None）"""
         from jobs.incremental_checker import IncrementalChecker
+
         checker = IncrementalChecker()
 
         with patch("jobs.incremental_checker.db_session") as mock_ctx:
@@ -62,15 +61,14 @@ class TestIncrementalChecker:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_db)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 
-            starts, _ = checker.check(
-                ["000001.SZ"], "2024-01-01", "2026-03-14"
-            )
+            starts, _ = checker.check(["000001.SZ"], "2024-01-01", "2026-03-14")
         # 最新日期 >= end_date 且 bar_count(500) >= expected * 0.9 → 跳过
         assert starts.get("000001.SZ") is None
 
     def test_full_sync_when_no_data(self):
         """DB 中无数据时应从 start_date 开始全量"""
         from jobs.incremental_checker import IncrementalChecker
+
         checker = IncrementalChecker()
 
         with patch("jobs.incremental_checker.db_session") as mock_ctx:
@@ -79,14 +77,13 @@ class TestIncrementalChecker:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_db)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 
-            starts, _ = checker.check(
-                ["600000.SH"], "2024-01-01", "2026-03-14"
-            )
+            starts, _ = checker.check(["600000.SH"], "2024-01-01", "2026-03-14")
         assert starts.get("600000.SH") == "2024-01-01"
 
     def test_incremental_from_next_day(self):
         """有数据但不够新时，应从 max_date + 1 开始"""
         from jobs.incremental_checker import IncrementalChecker
+
         checker = IncrementalChecker()
 
         with patch("jobs.incremental_checker.db_session") as mock_ctx:
@@ -96,9 +93,7 @@ class TestIncrementalChecker:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_db)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 
-            starts, _ = checker.check(
-                ["000001.SZ"], "2025-01-01", "2026-03-14"
-            )
+            starts, _ = checker.check(["000001.SZ"], "2025-01-01", "2026-03-14")
         assert starts.get("000001.SZ") == "2026-01-11"
 
 
@@ -109,6 +104,7 @@ class TestCleanupJob:
     def test_cutoff_date_7_years(self):
         """保留 7 年 → 截止日期约等于今天减 2555 天"""
         from datetime import datetime, timedelta
+
         retain = 7
         cutoff = (datetime.now() - timedelta(days=retain * 365)).strftime("%Y-%m-%d")
         year = int(cutoff[:4])
@@ -117,6 +113,7 @@ class TestCleanupJob:
     def test_cutoff_date_formats_correctly(self):
         """截止日期为 YYYY-MM-DD 格式"""
         from datetime import datetime, timedelta
+
         cutoff = (datetime.now() - timedelta(days=7 * 365)).strftime("%Y-%m-%d")
         parts = cutoff.split("-")
         assert len(parts) == 3
@@ -130,6 +127,7 @@ class TestFactorNormalization:
     def test_all_equal_values_returns_zero(self):
         """全相同值时归一化结果应为 0 或 NaN，不应崩溃"""
         import numpy as np
+
         values = np.array([1.0, 1.0, 1.0, 1.0, 1.0])
         std = values.std()
         if std == 0:
@@ -141,6 +139,7 @@ class TestFactorNormalization:
     def test_single_stock_returns_zero(self):
         """只有1只股票时不应产生 NaN"""
         import numpy as np
+
         values = np.array([3.14])
         if values.std() == 0 or len(values) == 1:
             result = np.array([0.0])
@@ -151,6 +150,7 @@ class TestFactorNormalization:
     def test_normal_zscore(self):
         """正常 z-score 测试"""
         import numpy as np
+
         values = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         result = (values - values.mean()) / values.std()
         assert abs(result.mean()) < 1e-10
@@ -170,7 +170,7 @@ class TestKlineResample:
     def test_weekly_aggregation_ohlc(self):
         """周K：同一周内 high=最高, low=最低, open=第一天, close=最后一天"""
         bars = [
-            {"time": "2026-03-09", "open": 10.0, "high": 12.0, "low": 9.0,  "close": 11.0},  # 周一
+            {"time": "2026-03-09", "open": 10.0, "high": 12.0, "low": 9.0, "close": 11.0},  # 周一
             {"time": "2026-03-10", "open": 11.0, "high": 13.0, "low": 10.0, "close": 12.5},  # 周二
             {"time": "2026-03-11", "open": 12.5, "high": 14.0, "low": 11.0, "close": 10.0},  # 周三
         ]
@@ -186,7 +186,7 @@ class TestKlineResample:
                 "time": g[0]["time"],
                 "open": g[0]["open"],
                 "high": max(b["high"] for b in g),
-                "low":  min(b["low"]  for b in g),
+                "low": min(b["low"] for b in g),
                 "close": g[-1]["close"],
             }
             for g in groups.values()
@@ -194,7 +194,7 @@ class TestKlineResample:
         assert len(week_bars) == 1
         wb = week_bars[0]
         assert wb["high"] == 14.0
-        assert wb["low"]  == 9.0
+        assert wb["low"] == 9.0
         assert wb["open"] == 10.0
         assert wb["close"] == 10.0
 

@@ -99,7 +99,7 @@ def stratified_backtest(
             ic_values.append(float(ic))
         else:
             ic_values.append(0.0)
-        valid_dates.append(str(date_start.date()) if hasattr(date_start, 'date') else str(date_start))
+        valid_dates.append(str(date_start.date()) if hasattr(date_start, "date") else str(date_start))
 
         # 按因子值分位分组
         labels = _assign_groups(f_vals, n_groups)
@@ -121,12 +121,14 @@ def stratified_backtest(
         cum = _cum_returns(rets)
         annual_ret = _annualize_return(rets)
         pct_label = _group_label(g, n_groups)
-        groups.append({
-            "id": g,
-            "label": pct_label,
-            "annual_return": round(annual_ret, 4),
-            "cum_returns": [round(v, 4) for v in cum],
-        })
+        groups.append(
+            {
+                "id": g,
+                "label": pct_label,
+                "annual_return": round(annual_ret, 4),
+                "cum_returns": [round(v, 4) for v in cum],
+            }
+        )
 
     # 多空收益（Top 组 - Bottom 组）
     ls_rets = np.array(group_returns[1]) - np.array(group_returns[n_groups])
@@ -174,13 +176,18 @@ def stratified_backtest(
         "summary": summary,
     }
 
-    log.info("stratified_backtest_done",
-             periods=len(valid_dates), stocks=len(common_codes),
-             ic_mean=round(ic_mean, 4), mono=round(mono, 2))
+    log.info(
+        "stratified_backtest_done",
+        periods=len(valid_dates),
+        stocks=len(common_codes),
+        ic_mean=round(ic_mean, 4),
+        mono=round(mono, 2),
+    )
     return result
 
 
 # ── 辅助函数 ──
+
 
 def _assign_groups(factor_series: pd.Series, n_groups: int) -> pd.Series:
     """按因子值分位分组，1 = Top（因子值最大），n = Bottom"""

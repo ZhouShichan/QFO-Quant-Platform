@@ -16,38 +16,86 @@ BOND_PREFIXES = ("10", "11", "12", "13", "40")
 ETF_PREFIXES = ("51", "52", "58", "15", "16", "56")
 
 # ── 港股通 / 期货正则 ──
-HK_PATTERN = re.compile(r"^\d{5}$")                     # 港股通: 00700
+HK_PATTERN = re.compile(r"^\d{5}$")  # 港股通: 00700
 FUTURE_PATTERN = re.compile(r"^[A-Za-z]{1,2}\d{3,4}$")  # 期货: IF2506, rb2510
 
 # ── 期货品种 → 交易所映射 ──
 FUTURE_EXCHANGES: dict[str, str] = {
     # 中金所 (CFFEX) — 股指/国债
-    "IF": "CFFEX", "IC": "CFFEX", "IM": "CFFEX", "IH": "CFFEX",
-    "TS": "CFFEX", "TF": "CFFEX", "T": "CFFEX",
+    "IF": "CFFEX",
+    "IC": "CFFEX",
+    "IM": "CFFEX",
+    "IH": "CFFEX",
+    "TS": "CFFEX",
+    "TF": "CFFEX",
+    "T": "CFFEX",
     # 上期所 (SHFE) — 金属/能化
-    "rb": "SHFE", "hc": "SHFE", "cu": "SHFE", "al": "SHFE",
-    "zn": "SHFE", "pb": "SHFE", "ni": "SHFE", "sn": "SHFE",
-    "au": "SHFE", "ag": "SHFE", "bu": "SHFE", "ru": "SHFE",
-    "fu": "SHFE", "sp": "SHFE", "ss": "SHFE", "wr": "SHFE",
+    "rb": "SHFE",
+    "hc": "SHFE",
+    "cu": "SHFE",
+    "al": "SHFE",
+    "zn": "SHFE",
+    "pb": "SHFE",
+    "ni": "SHFE",
+    "sn": "SHFE",
+    "au": "SHFE",
+    "ag": "SHFE",
+    "bu": "SHFE",
+    "ru": "SHFE",
+    "fu": "SHFE",
+    "sp": "SHFE",
+    "ss": "SHFE",
+    "wr": "SHFE",
     # 大商所 (DCE) — 农产品/工业品
-    "i": "DCE", "j": "DCE", "jm": "DCE", "m": "DCE",
-    "y": "DCE", "p": "DCE", "c": "DCE", "cs": "DCE",
-    "a": "DCE", "b": "DCE", "jd": "DCE", "l": "DCE",
-    "v": "DCE", "pp": "DCE", "eg": "DCE", "eb": "DCE",
-    "pg": "DCE", "lh": "DCE",
+    "i": "DCE",
+    "j": "DCE",
+    "jm": "DCE",
+    "m": "DCE",
+    "y": "DCE",
+    "p": "DCE",
+    "c": "DCE",
+    "cs": "DCE",
+    "a": "DCE",
+    "b": "DCE",
+    "jd": "DCE",
+    "l": "DCE",
+    "v": "DCE",
+    "pp": "DCE",
+    "eg": "DCE",
+    "eb": "DCE",
+    "pg": "DCE",
+    "lh": "DCE",
     # 郑商所 (CZCE) — 农产品/化工
-    "CF": "CZCE", "SR": "CZCE", "TA": "CZCE", "MA": "CZCE",
-    "OI": "CZCE", "RM": "CZCE", "FG": "CZCE", "SA": "CZCE",
-    "AP": "CZCE", "CJ": "CZCE", "PK": "CZCE", "UR": "CZCE",
-    "SF": "CZCE", "SM": "CZCE", "ZC": "CZCE", "PF": "CZCE",
+    "CF": "CZCE",
+    "SR": "CZCE",
+    "TA": "CZCE",
+    "MA": "CZCE",
+    "OI": "CZCE",
+    "RM": "CZCE",
+    "FG": "CZCE",
+    "SA": "CZCE",
+    "AP": "CZCE",
+    "CJ": "CZCE",
+    "PK": "CZCE",
+    "UR": "CZCE",
+    "SF": "CZCE",
+    "SM": "CZCE",
+    "ZC": "CZCE",
+    "PF": "CZCE",
     # 上海国际能源 (INE)
-    "sc": "INE", "nr": "INE", "lu": "INE", "bc": "INE",
+    "sc": "INE",
+    "nr": "INE",
+    "lu": "INE",
+    "bc": "INE",
 }
 
 # 中文标签
 TYPE_LABELS = {
-    "stock": "股票", "bond": "可转债", "etf": "ETF",
-    "hk_stock": "港股通", "future": "期货",
+    "stock": "股票",
+    "bond": "可转债",
+    "etf": "ETF",
+    "hk_stock": "港股通",
+    "future": "期货",
 }
 
 
@@ -164,4 +212,3 @@ def to_bs_code(code: str) -> str:
         return pure  # BaoStock 不支持港股/期货，原样返回
     exchange = get_exchange(pure).lower()
     return f"{exchange}.{pure}" if exchange else pure
-

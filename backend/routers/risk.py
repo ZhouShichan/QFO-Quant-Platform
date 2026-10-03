@@ -8,7 +8,6 @@ POST /risk/analyze
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional
 
 from services.risk_service import RiskService
 
@@ -18,12 +17,11 @@ _risk = RiskService()
 
 
 class AnalyzeRequest(BaseModel):
-    codes: List[str]
+    codes: list[str]
     start_date: str
     end_date: str
-    weights: Optional[List[float]] = None  # 若为 None 则等权
+    weights: list[float] | None = None  # 若为 None 则等权
     include_benchmark: bool = True
-
 
 
 @router.post("/analyze")
@@ -36,9 +34,10 @@ def analyze_risk(req: AnalyzeRequest):
 
     try:
         import numpy as np
+        from sqlalchemy import and_
+
         from core.database import db_session
         from utils.bar_query import get_bar_model, to_db_code
-        from sqlalchemy import and_
 
         codes = req.codes
         if not codes:
@@ -57,14 +56,18 @@ def analyze_risk(req: AnalyzeRequest):
             for code in codes:
                 BarModel = get_bar_model(code)
                 db_code = to_db_code(code)
-                rows = (db.query(BarModel.trade_date, BarModel.close)
-                        .filter(and_(
+                rows = (
+                    db.query(BarModel.trade_date, BarModel.close)
+                    .filter(
+                        and_(
                             BarModel.code == db_code,
                             BarModel.trade_date >= req.start_date,
                             BarModel.trade_date <= req.end_date,
-                        ))
-                        .order_by(BarModel.trade_date.asc())
-                        .all())
+                        )
+                    )
+                    .order_by(BarModel.trade_date.asc())
+                    .all()
+                )
                 if len(rows) >= 10:
                     if not all_dates:  # 只取第一只有效股的日期序列，避免循环覆盖
                         all_dates = [r.trade_date for r in rows]
@@ -76,8 +79,7 @@ def analyze_risk(req: AnalyzeRequest):
                         stock_returns[code] = np.diff(closes) / np.where(closes[:-1] > 0, closes[:-1], 1.0)
 
         if not stock_returns:
-            raise HTTPException(status_code=400,
-                detail="未找到有效行情数据，请先在数据中台同步指定时间段的行情")
+            raise HTTPException(status_code=400, detail="未找到有效行情数据，请先在数据中台同步指定时间段的行情")
 
         # 对齐序列
         min_len = min(len(v) for v in stock_returns.values())
@@ -105,21 +107,24 @@ def analyze_risk(req: AnalyzeRequest):
             dates=date_strs,
         )
 
-        return _sanitize({
-            "status": "success",
-            "codes": aligned_codes,
-            "weights": aligned_weights.tolist(),
-            "data_points": min_len,
-            "requested_start_date": req.start_date,
-            "requested_end_date": req.end_date,
-            "actual_start_date": str(all_dates[0]) if all_dates else None,
-            "actual_end_date": str(all_dates[-1]) if all_dates else None,
-            "risk": result,
-        })
+        return _sanitize(
+            {
+                "status": "success",
+                "codes": aligned_codes,
+                "weights": aligned_weights.tolist(),
+                "data_points": min_len,
+                "requested_start_date": req.start_date,
+                "requested_end_date": req.end_date,
+                "actual_start_date": str(all_dates[0]) if all_dates else None,
+                "actual_end_date": str(all_dates[-1]) if all_dates else None,
+                "risk": result,
+            }
+        )
 
     except HTTPException:
         raise
     except Exception as e:
         import structlog as _sl
+
         _sl.get_logger("risk_router").exception("risk_analyze_error", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

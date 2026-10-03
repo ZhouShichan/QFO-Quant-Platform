@@ -5,9 +5,11 @@
 """
 
 import json
-import structlog
-from datetime import datetime, timedelta
 from collections import Counter
+from datetime import datetime, timedelta
+
+import structlog
+
 from core.database import db_session
 from models.quant_data import StockNews
 from services.notifier import send_notification
@@ -22,6 +24,7 @@ def generate_daily_summary() -> str:
 
     # 从上次推送时间开始，避免多次推送重复内容
     from services.notifier import load_config
+
     last = load_config().get("last_summary", {})
     last_time_str = last.get("time", "")
     if last_time_str:
@@ -34,10 +37,17 @@ def generate_daily_summary() -> str:
 
     with db_session() as db:
         from sqlalchemy import or_
-        items = db.query(StockNews).filter(or_(
-            StockNews.publish_time >= since,
-            (StockNews.publish_time.is_(None)) & (StockNews.created_at >= since),
-        )).all()
+
+        items = (
+            db.query(StockNews)
+            .filter(
+                or_(
+                    StockNews.publish_time >= since,
+                    (StockNews.publish_time.is_(None)) & (StockNews.created_at >= since),
+                )
+            )
+            .all()
+        )
 
         if not items:
             return ""
@@ -68,6 +78,7 @@ def generate_daily_summary() -> str:
         code_names = {}
         if top_codes:
             from utils.name_resolver import resolve_names
+
             code_names = resolve_names([c for c, _ in top_codes])
 
         # 数据源分布
@@ -75,6 +86,7 @@ def generate_daily_summary() -> str:
 
         # 今日热门事件 — 先按来源拆分，再按股票分组
         from collections import defaultdict
+
         event_items = [i for i in items if i.event_type and i.sentiment_score and abs(i.sentiment_score) >= 0.3]
 
         # 按来源拆分：结构化（[规则] 前缀）vs 新闻
@@ -94,25 +106,31 @@ def generate_daily_summary() -> str:
                     continue
                 stock_events[codes[0]].append(item)
 
-            ranked = sorted(stock_events.items(),
-                key=lambda kv: max(abs(i.sentiment_score) for i in kv[1]), reverse=True)[:top_n]
+            ranked = sorted(
+                stock_events.items(), key=lambda kv: max(abs(i.sentiment_score) for i in kv[1]), reverse=True
+            )[:top_n]
 
             groups = []
             for code, evts in ranked:
                 evts_sorted = sorted(evts, key=lambda x: abs(x.sentiment_score), reverse=True)
                 best_score = evts_sorted[0].sentiment_score
-                groups.append({
-                    "name": group_names.get(code, code),
-                    "code": code,
-                    "emoji": "📈" if best_score > 0 else "📉",
-                    "score": f"{best_score:+.1f}",
-                    "events": [{
-                        "title": (e.title or "")[:45],
-                        "event_type": e.event_type or "",
-                        "reason": (e.nlp_reason or "")[:25],
-                        "url": e.url or "",
-                    } for e in evts_sorted[:4]],
-                })
+                groups.append(
+                    {
+                        "name": group_names.get(code, code),
+                        "code": code,
+                        "emoji": "📈" if best_score > 0 else "📉",
+                        "score": f"{best_score:+.1f}",
+                        "events": [
+                            {
+                                "title": (e.title or "")[:45],
+                                "event_type": e.event_type or "",
+                                "reason": (e.nlp_reason or "")[:25],
+                                "url": e.url or "",
+                            }
+                            for e in evts_sorted[:4]
+                        ],
+                    }
+                )
             return groups
 
         # 解析股票名称（合并去重）
@@ -126,6 +144,7 @@ def generate_daily_summary() -> str:
                 pass
         if all_codes:
             from utils.name_resolver import resolve_names as resolve_group_names
+
             group_names = resolve_group_names(list(all_codes))
         else:
             group_names = {}
@@ -135,8 +154,10 @@ def generate_daily_summary() -> str:
 
     # Jinja2 模板渲染
     from utils.template_engine import render
-    return render("daily_summary.j2",
-        date=today.strftime('%Y-%m-%d'),
+
+    return render(
+        "daily_summary.j2",
+        date=today.strftime("%Y-%m-%d"),
         total=total,
         with_codes=with_codes_count,
         with_codes_pct=with_codes_count * 100 // max(total, 1),
@@ -163,7 +184,9 @@ def send_daily_summary() -> bool:
     # 记录推送状态
     try:
         from datetime import datetime
+
         from services.notifier import load_config, save_config
+
         cfg = load_config()
         cfg["last_summary"] = {
             "time": str(datetime.now().replace(microsecond=0))[:16],  # 推送时间戳（非交易日期）

@@ -2,9 +2,11 @@
 日线行情统一查询辅助模块
 根据 code 自动路由到 StockDailyBar 或 EtfDailyBar
 """
+
 from functools import lru_cache
-from models.quant_data import StockDailyBar, EtfDailyBar, EtfBasicInfo, ConvertibleBondBar
+
 from core.database import db_session
+from models.quant_data import ConvertibleBondBar, EtfBasicInfo, EtfDailyBar, StockDailyBar
 from utils.asset_type import is_bond as _is_bond_by_prefix
 
 
@@ -14,7 +16,7 @@ def _etf_code_set() -> frozenset:
     with db_session() as db:
         codes = [r[0] for r in db.query(EtfBasicInfo.code).all()]
     full = set(codes)
-    short = {c.split('.')[0] for c in codes if '.' in c}
+    short = {c.split(".")[0] for c in codes if "." in c}
     return frozenset(full | short)
 
 
@@ -23,7 +25,7 @@ def _etf_short_to_full() -> dict:
     """6位代码 → DB 格式的映射表（如 159100 → 159100.SZ）"""
     with db_session() as db:
         codes = [r[0] for r in db.query(EtfBasicInfo.code).all()]
-    return {c.split('.')[0]: c for c in codes if '.' in c}
+    return {c.split(".")[0]: c for c in codes if "." in c}
 
 
 def refresh_etf_cache():
@@ -39,7 +41,7 @@ def to_db_code(code: str) -> str:
     股票: 按首位推断后缀（6→.SH, 其余→.SZ）
     已带后缀则原样返回
     """
-    if '.' in code:
+    if "." in code:
         return code
     # 可转债在 DB 中存纯 6 位码，不加后缀
     if is_bond(code):
@@ -50,6 +52,7 @@ def to_db_code(code: str) -> str:
         return mapping[code]
     # 股票按规则推断
     from utils.asset_type import to_ts_code
+
     return to_ts_code(code)
 
 
@@ -96,13 +99,10 @@ def query_bars(db, codes: list, filters: list = None):
     ]:
         if not sub_codes:
             continue
-        q = db.query(model.code, model.trade_date, model.close).filter(
-            model.code.in_(sub_codes)
-        )
+        q = db.query(model.code, model.trade_date, model.close).filter(model.code.in_(sub_codes))
         if filters:
             for f in filters:
                 q = q.filter(f(model))
         results.extend(q.all())
 
     return results
-

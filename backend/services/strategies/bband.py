@@ -1,6 +1,7 @@
 """布林带回归策略"""
 
 import numpy as np
+
 from services.strategies.base import BaseStrategy, StrategyParam, sma
 
 
@@ -27,7 +28,7 @@ class BbandStrategy(BaseStrategy):
 
         std = np.full_like(prices, np.nan)
         for t in range(window - 1, T):
-            std[t] = np.nanstd(prices[t - window + 1:t + 1], axis=0)
+            std[t] = np.nanstd(prices[t - window + 1 : t + 1], axis=0)
 
         upper = mid + num_std * std
         lower = mid - num_std * std

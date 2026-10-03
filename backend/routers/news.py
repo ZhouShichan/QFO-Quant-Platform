@@ -5,16 +5,18 @@ POST /api/news/refresh       — 手动触发抓取
 POST /api/news/search        — 全网搜索
 GET  /api/news/event-stats   — 事件回测统计
 """
+
+import json
 import threading
-from fastapi import APIRouter, Depends, Query, HTTPException
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing import List
+from sqlalchemy import func
 from sqlalchemy.orm import Session
+
 from core.database import get_db
 from models.quant_data import StockNews
-from datetime import datetime, timedelta
-from sqlalchemy import func
-import json
 from services.news.sentiment import STRONG_THRESHOLD
 from services.news.sentiment_llm import _load_providers
 from utils.template_engine import clean_reason as _clean_reason
@@ -27,10 +29,12 @@ def _safe_loads_codes(raw: str) -> list:
     except (json.JSONDecodeError, TypeError):
         return []
 
+
 router = APIRouter(prefix="/news", tags=["News"])
 
 # ── Pipeline 单例 ──
 from services.news.pipeline import get_pipeline
+
 _pipeline = get_pipeline()
 
 
@@ -51,6 +55,7 @@ async def get_news(
     # 默认排除结构化事件（大宗/解禁/龙虎榜），K线可视化需要时传 include_events=true
     if not include_events:
         from sqlalchemy import or_ as _or
+
         q = q.filter(_or(StockNews.nlp_reason.is_(None), ~StockNews.nlp_reason.like("[规则]%")))
 
     if search:
@@ -90,18 +95,23 @@ async def get_news(
     code_name_map = {}
     code_change_map = {}
     if all_codes:
-        from utils.name_resolver import resolve_names
         from models.quant_data import StockDailyBar
+        from utils.name_resolver import resolve_names
+
         code_name_map = resolve_names(list(all_codes))
 
-        subq = db.query(
-            StockDailyBar.code,
-            func.max(StockDailyBar.trade_date).label("max_date")
-        ).filter(StockDailyBar.code.in_(all_codes)).group_by(StockDailyBar.code).subquery()
+        subq = (
+            db.query(StockDailyBar.code, func.max(StockDailyBar.trade_date).label("max_date"))
+            .filter(StockDailyBar.code.in_(all_codes))
+            .group_by(StockDailyBar.code)
+            .subquery()
+        )
 
-        rows = db.query(StockDailyBar.code, StockDailyBar.pct_chg).join(
-            subq, (StockDailyBar.code == subq.c.code) & (StockDailyBar.trade_date == subq.c.max_date)
-        ).all()
+        rows = (
+            db.query(StockDailyBar.code, StockDailyBar.pct_chg)
+            .join(subq, (StockDailyBar.code == subq.c.code) & (StockDailyBar.trade_date == subq.c.max_date))
+            .all()
+        )
         code_change_map = {r.code: round(float(r.pct_chg or 0), 2) for r in rows}
 
     return {
@@ -112,7 +122,9 @@ async def get_news(
                 "summary": n.summary,
                 "source": n.source,
                 "url": n.url,
-                "publish_time": (n.publish_time or n.created_at).isoformat() if (n.publish_time or n.created_at) else None,
+                "publish_time": (n.publish_time or n.created_at).isoformat()
+                if (n.publish_time or n.created_at)
+                else None,
                 "market_type": n.market_type,
                 "related_codes": _safe_loads_codes(n.related_codes),
                 "sentiment_score": n.sentiment_score,
@@ -129,7 +141,7 @@ async def get_news(
 
 
 class RefreshRequest(BaseModel):
-    codes: List[str] = Field(default=[], description="股票代码列表（来自自选池）")
+    codes: list[str] = Field(default=[], description="股票代码列表（来自自选池）")
 
 
 @router.post("/refresh")
@@ -142,6 +154,7 @@ def refresh_news(req: RefreshRequest):
         codes = req.codes
         with db_session() as db:
             from utils.name_resolver import resolve_names
+
             stock_names = resolve_names(codes)
     else:
         with db_session() as db:
@@ -157,7 +170,8 @@ def refresh_news(req: RefreshRequest):
 
     # AkShare 在后台线程 fire-and-forget（~30s），完成后 WS 通知
     threading.Thread(
-        target=_pipeline.run_batch, args=(codes, stock_names),
+        target=_pipeline.run_batch,
+        args=(codes, stock_names),
         daemon=True,
     ).start()
 
@@ -168,7 +182,9 @@ def refresh_news(req: RefreshRequest):
         "message": f"新增 {tushare_count} 条宏观新闻",
     }
 
+
 _backfill_lock = threading.Lock()
+
 
 @router.post("/nlp-backfill")
 def nlp_backfill(
@@ -194,9 +210,7 @@ def nlp_backfill(
                 _backfill_lock.release()
                 return {"status": "ok", "updated": 0, "remaining": 0, "message": "无需补跑"}
 
-            remaining = db.query(func.count(StockNews.id)).filter(
-                StockNews.event_type.is_(None)
-            ).scalar() - len(rows)
+            remaining = db.query(func.count(StockNews.id)).filter(StockNews.event_type.is_(None)).scalar() - len(rows)
 
             llm_items = []
             for row in rows:
@@ -208,7 +222,8 @@ def nlp_backfill(
         if not llm_items:
             _backfill_lock.release()
             return {
-                "status": "ok", "processing": 0,
+                "status": "ok",
+                "processing": 0,
                 "remaining": max(0, remaining),
                 "message": f"剩余 {max(0, remaining)} 条均无关联股票，无需评分",
             }
@@ -231,6 +246,7 @@ def nlp_backfill(
         _backfill_lock.release()
         raise
 
+
 class SearchRequest(BaseModel):
     keyword: str = Field(..., min_length=1, max_length=100, description="搜索关键词")
 
@@ -242,7 +258,7 @@ def search_news(req: SearchRequest):
     try:
         inserted, items = _pipeline.search(keyword)
     except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
     return {
         "count": len(items),
@@ -262,9 +278,6 @@ def search_news(req: SearchRequest):
     }
 
 
-
-
-
 @router.post("/sentiment/batch")
 async def batch_sentiment(
     payload: dict,
@@ -280,6 +293,7 @@ async def batch_sentiment(
     effective_time = func.coalesce(StockNews.publish_time, StockNews.created_at)
     # SQL 层按 codes 过滤，避免加载全部新闻到内存
     from sqlalchemy import or_
+
     bare_codes = [c.split(".")[0] if "." in c else c for c in codes]
     code_filters = [StockNews.related_codes.contains(bc) for bc in bare_codes]
     items = (
@@ -314,6 +328,7 @@ async def batch_sentiment(
         }
     return result
 
+
 @router.get("/auto-config")
 async def get_auto_config():
     """获取新闻自动抓取配置（含倒计时 + 管道统计）"""
@@ -322,31 +337,37 @@ async def get_auto_config():
     # 管道统计（轻量查询）
     pipeline_stats = {}
     try:
-        from core.database import db_session
         from sqlalchemy import text as _text
+
+        from core.database import db_session
         from services.news.sentiment_llm import _daily
+
         with db_session() as db:
-            row = db.execute(_text(
-                "SELECT "
-                "  COUNT(*) AS total, "
-                "  SUM(CASE WHEN related_codes IS NOT NULL AND related_codes != '[]' THEN 1 ELSE 0 END) AS has_codes, "
-                "  SUM(CASE WHEN event_type IS NOT NULL AND event_type != '' "
-                "    AND related_codes IS NOT NULL AND related_codes != '[]' "
-                "    AND (nlp_reason IS NULL OR nlp_reason NOT LIKE '[规则]%') THEN 1 ELSE 0 END) AS enriched, "
-                "  SUM(CASE WHEN event_type IS NOT NULL AND event_type != '' THEN 1 ELSE 0 END) AS events "
-                "FROM stock_news"
-            )).fetchone()
+            row = db.execute(
+                _text(
+                    "SELECT "
+                    "  COUNT(*) AS total, "
+                    "  SUM(CASE WHEN related_codes IS NOT NULL AND related_codes != '[]' THEN 1 ELSE 0 END) AS has_codes, "
+                    "  SUM(CASE WHEN event_type IS NOT NULL AND event_type != '' "
+                    "    AND related_codes IS NOT NULL AND related_codes != '[]' "
+                    "    AND (nlp_reason IS NULL OR nlp_reason NOT LIKE '[规则]%') THEN 1 ELSE 0 END) AS enriched, "
+                    "  SUM(CASE WHEN event_type IS NOT NULL AND event_type != '' THEN 1 ELSE 0 END) AS events "
+                    "FROM stock_news"
+                )
+            ).fetchone()
             stats = _daily.stats
             pipeline_stats = {
                 "news_total": row[0] or 0,
-                "llm_target": row[1] or 0,      # 有关联股票（可进LLM）
-                "llm_enriched": row[2] or 0,     # LLM已标注
-                "event_total": row[3] or 0,      # 事件总数
+                "llm_target": row[1] or 0,  # 有关联股票（可进LLM）
+                "llm_enriched": row[2] or 0,  # LLM已标注
+                "event_total": row[3] or 0,  # 事件总数
                 "llm_calls_today": stats.get("calls", 0),
                 "llm_cost_today": stats.get("cost_today", 0),
             }
     except Exception as e:
-        import structlog; structlog.get_logger("news_router").debug("pipeline_stats_query_failed", error=str(e))
+        import structlog
+
+        structlog.get_logger("news_router").debug("pipeline_stats_query_failed", error=str(e))
 
     return {
         "enabled": _m._news_auto_enabled,
@@ -366,6 +387,7 @@ class AutoConfigRequest(BaseModel):
 async def set_auto_config(req: AutoConfigRequest):
     """动态调整新闻自动抓取配置（开启时立即执行一次）"""
     import main as _m
+
     was_enabled = _m._news_auto_enabled
     _m._news_auto_enabled = req.enabled
     if req.interval_hours is not None:
@@ -392,17 +414,15 @@ async def set_auto_config(req: AutoConfigRequest):
 async def send_summary():
     """手动触发每日摘要推送"""
     from jobs.daily_summary import send_daily_summary
+
     ok = send_daily_summary()
     return {"success": ok}
-
-
-
 
 
 @router.post("/notify-test")
 async def test_notify(channel: str = ""):
     """逐渠道测试并返回详细结果（支持指定单渠道: ?channel=pushplus）"""
-    from services.notifier import load_config, _CHANNEL_SENDERS, CHANNEL_LABELS
+    from services.notifier import _CHANNEL_SENDERS, CHANNEL_LABELS, load_config
 
     cfg = load_config()
     results = []
@@ -432,6 +452,7 @@ async def test_notify(channel: str = ""):
 
 # ── 事件回测统计 ──
 
+
 @router.get("/event-stats")
 def event_stats(
     event_type: str = Query(None, description="筛选事件类型（None=全部）"),
@@ -439,5 +460,5 @@ def event_stats(
 ):
     """按 event_type 统计事件发生后 T+N 天的收益表现"""
     from services.news.event_backtest import analyze_events
-    return analyze_events(event_type=event_type, min_score=min_score)
 
+    return analyze_events(event_type=event_type, min_score=min_score)

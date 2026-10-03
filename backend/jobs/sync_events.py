@@ -7,11 +7,11 @@
 来源: Tushare Pro block_trade / share_float / top_list（需 2000 积分）
 """
 
-import time
 import json
 import math
+import time
+
 import structlog
-from typing import Optional
 
 from jobs.sync_base import write_watermark
 from utils.trade_date import resolve_end_date
@@ -38,8 +38,8 @@ _PREFIX_TOP = "[龙虎榜]"
 
 def sync_events(
     ts_source,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     force_refill: bool = False,
 ) -> dict:
     """
@@ -92,16 +92,21 @@ def sync_events(
 def _get_events_db_max_next() -> str | None:
     """读取 StockNews 中事件类型的最大 publish_time +1 天，返回 YYYYMMDD。"""
     from datetime import timedelta
-    from core.database import db_session
+
     from sqlalchemy import text
+
+    from core.database import db_session
+
     try:
         with db_session() as db:
-            r = db.execute(text(
-                "SELECT MAX(DATE(publish_time)) FROM stock_news "
-                "WHERE event_type IN ('大宗交易', '解禁', '龙虎榜')"
-            )).scalar()
+            r = db.execute(
+                text(
+                    "SELECT MAX(DATE(publish_time)) FROM stock_news WHERE event_type IN ('大宗交易', '解禁', '龙虎榜')"
+                )
+            ).scalar()
             if r:
                 import pandas as pd
+
                 max_date = pd.to_datetime(str(r))
                 return (max_date + timedelta(days=1)).strftime("%Y%m%d")
     except Exception as e:
@@ -112,10 +117,11 @@ def _get_events_db_max_next() -> str | None:
 def _push_events(pub_date: str):
     """推送高分结构化事件（逻辑与 pipeline._push_top 一致）"""
     try:
-        from services.notifier import load_config, save_config, send_notification, is_push_cooling
+        from datetime import datetime
+
         from core.database import db_session
         from models.quant_data import StockNews
-        from datetime import datetime
+        from services.notifier import is_push_cooling, load_config, save_config, send_notification
 
         cfg = load_config()
         if not cfg.get("auto_push_enabled", False):
@@ -127,10 +133,14 @@ def _push_events(pub_date: str):
         top_n = cfg.get("push_top_n", 5)
 
         with db_session() as db:
-            rows = db.query(StockNews).filter(
-                StockNews.event_type.in_(["大宗交易", "解禁", "龙虎榜"]),
-                StockNews.publish_time >= pub_date,
-            ).all()
+            rows = (
+                db.query(StockNews)
+                .filter(
+                    StockNews.event_type.in_(["大宗交易", "解禁", "龙虎榜"]),
+                    StockNews.publish_time >= pub_date,
+                )
+                .all()
+            )
 
             scored = [r for r in rows if abs(r.sentiment_score or 0) >= threshold]
             scored.sort(key=lambda r: abs(r.sentiment_score or 0), reverse=True)
@@ -146,18 +156,21 @@ def _push_events(pub_date: str):
                     codes = json.loads(r.related_codes or "[]")
                 except (json.JSONDecodeError, TypeError):
                     log.debug("push_codes_parse_skip", title=r.title)
-                push_items.append({
-                    "emoji": "📈" if s > 0 else "📉",
-                    "label": "利好" if s > 0 else "利空",
-                    "score": f"{s:+.1f}",
-                    "title": (r.title or "")[:50],
-                    "url": r.url or "",
-                    "codes": ", ".join(codes[:3]) if codes else "",
-                    "event_type": r.event_type or "",
-                    "reason": (r.nlp_reason or "")[:30],
-                })
+                push_items.append(
+                    {
+                        "emoji": "📈" if s > 0 else "📉",
+                        "label": "利好" if s > 0 else "利空",
+                        "score": f"{s:+.1f}",
+                        "title": (r.title or "")[:50],
+                        "url": r.url or "",
+                        "codes": ", ".join(codes[:3]) if codes else "",
+                        "event_type": r.event_type or "",
+                        "reason": (r.nlp_reason or "")[:30],
+                    }
+                )
 
         from utils.template_engine import render
+
         now = str(datetime.now().replace(microsecond=0))[:16]
         content = render("push_top.j2", items=push_items, now=now)
         ok = send_notification(content)
@@ -165,6 +178,7 @@ def _push_events(pub_date: str):
         save_config(cfg)
     except Exception as e:
         log.warning("push_events_error", error=str(e))
+
 
 def _sync_single_day(ts, target_date: str) -> int:
     """拉取单日三类事件"""
@@ -193,9 +207,7 @@ def _sync_range(ts, start: str, end: str) -> int:
 def _get_trade_dates_in_range(ts, start: str, end: str) -> list:
     """获取范围内的交易日列表"""
     try:
-        df = ts.pro.trade_cal(
-            start_date=start, end_date=end, is_open="1", fields="cal_date"
-        )
+        df = ts.pro.trade_cal(start_date=start, end_date=end, is_open="1", fields="cal_date")
         if df is not None and not df.empty:
             return sorted(df["cal_date"].astype(str).tolist())
     except Exception as e:
@@ -204,6 +216,7 @@ def _get_trade_dates_in_range(ts, start: str, end: str) -> list:
 
 
 # ── 大宗交易 ──
+
 
 def _fetch_block_trade(ts, trade_date=None, start_date=None, end_date=None) -> int:
     """拉取大宗交易并写入 StockNews"""
@@ -253,16 +266,18 @@ def _fetch_block_trade(ts, trade_date=None, start_date=None, end_date=None) -> i
                 score = -0.3
 
             title = f"{_PREFIX_BLOCK} {code} {pub_date} {' '.join(reason_parts)}"
-            rows.append({
-                "title": title[:200],
-                "source": "tushare",
-                "pub_date": pub_date,
-                "related_codes": json.dumps([code]),
-                "sentiment_score": score,
-                "event_type": "大宗交易",
-                "nlp_reason": f"[规则] {' '.join(reason_parts)}",
-                "code": code,
-            })
+            rows.append(
+                {
+                    "title": title[:200],
+                    "source": "tushare",
+                    "pub_date": pub_date,
+                    "related_codes": json.dumps([code]),
+                    "sentiment_score": score,
+                    "event_type": "大宗交易",
+                    "nlp_reason": f"[规则] {' '.join(reason_parts)}",
+                    "code": code,
+                }
+            )
 
         return _upsert_news(rows)
 
@@ -272,6 +287,7 @@ def _fetch_block_trade(ts, trade_date=None, start_date=None, end_date=None) -> i
 
 
 # ── 限售解禁 ──
+
 
 def _fetch_share_float(ts, float_date=None, start_date=None, end_date=None) -> int:
     """拉取限售解禁并写入 StockNews"""
@@ -322,16 +338,18 @@ def _fetch_share_float(ts, float_date=None, start_date=None, end_date=None) -> i
                 score = -0.3
 
             title = f"{_PREFIX_FLOAT} {code} {pub_date} {' '.join(reason_parts)}"
-            rows.append({
-                "title": title[:200],
-                "source": "tushare",
-                "pub_date": pub_date,
-                "related_codes": json.dumps([code]),
-                "sentiment_score": score,
-                "event_type": "解禁",
-                "nlp_reason": f"[规则] {' '.join(reason_parts)}",
-                "code": code,
-            })
+            rows.append(
+                {
+                    "title": title[:200],
+                    "source": "tushare",
+                    "pub_date": pub_date,
+                    "related_codes": json.dumps([code]),
+                    "sentiment_score": score,
+                    "event_type": "解禁",
+                    "nlp_reason": f"[规则] {' '.join(reason_parts)}",
+                    "code": code,
+                }
+            )
 
         return _upsert_news(rows)
 
@@ -342,6 +360,7 @@ def _fetch_share_float(ts, float_date=None, start_date=None, end_date=None) -> i
 
 # ── 龙虎榜 ──
 
+
 def _fetch_top_list(ts, trade_date=None) -> int:
     """拉取龙虎榜并写入 StockNews"""
     try:
@@ -350,8 +369,7 @@ def _fetch_top_list(ts, trade_date=None) -> int:
         @tm.with_tushare_retry(max_retries=2, delay=2.0)
         def _call():
             return ts.pro.top_list(
-                trade_date=trade_date,
-                fields="ts_code,trade_date,name,close,pct_change,net_amount,reason"
+                trade_date=trade_date, fields="ts_code,trade_date,name,close,pct_change,net_amount,reason"
             )
 
         df = _call()
@@ -389,16 +407,18 @@ def _fetch_top_list(ts, trade_date=None) -> int:
                 score = 0.3  # 上榜本身有关注度
 
             title = f"{_PREFIX_TOP} {code} {pub_date} {' '.join(reason_parts)}"
-            rows.append({
-                "title": title[:200],
-                "source": "tushare",
-                "pub_date": pub_date,
-                "related_codes": json.dumps([code]),
-                "sentiment_score": score,
-                "event_type": "龙虎榜",
-                "nlp_reason": f"[规则] {' '.join(reason_parts)}",
-                "code": code,
-            })
+            rows.append(
+                {
+                    "title": title[:200],
+                    "source": "tushare",
+                    "pub_date": pub_date,
+                    "related_codes": json.dumps([code]),
+                    "sentiment_score": score,
+                    "event_type": "龙虎榜",
+                    "nlp_reason": f"[规则] {' '.join(reason_parts)}",
+                    "code": code,
+                }
+            )
 
         return _upsert_news(rows)
 
@@ -409,29 +429,32 @@ def _fetch_top_list(ts, trade_date=None) -> int:
 
 # ── 写入 StockNews ──
 
+
 def _upsert_news(rows: list) -> int:
     """批量写入 StockNews，title 唯一索引自动去重"""
     if not rows:
         return 0
 
-    from services.news.storage import upsert_batch
     from services.news.sentiment import score_to_label
+    from services.news.storage import upsert_batch
 
     news_dicts = []
     for r in rows:
         score = r["sentiment_score"]
-        news_dicts.append({
-            "title": r["title"],
-            "source": r["source"],
-            "url": "",
-            "publish_time": r["pub_date"],
-            "related_codes": r["related_codes"],
-            "sentiment_score": score,
-            "sentiment_label": score_to_label(score),
-            "event_type": r["event_type"],
-            "nlp_reason": r["nlp_reason"],
-            "code": r.get("code"),
-        })
+        news_dicts.append(
+            {
+                "title": r["title"],
+                "source": r["source"],
+                "url": "",
+                "publish_time": r["pub_date"],
+                "related_codes": r["related_codes"],
+                "sentiment_score": score,
+                "sentiment_label": score_to_label(score),
+                "event_type": r["event_type"],
+                "nlp_reason": r["nlp_reason"],
+                "code": r.get("code"),
+            }
+        )
 
     inserted = upsert_batch(news_dicts)
     log.info("events_upserted", inserted=inserted, total=len(news_dicts))

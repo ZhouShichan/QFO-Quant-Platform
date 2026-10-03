@@ -4,9 +4,10 @@
 所有数据源（Tushare/AkShare/Tavily）共用此模块匹配关联代码，
 消除各源各自实现导致的规则不一致。
 """
+
 import re
+
 import structlog
-from typing import List, Optional
 
 log = structlog.get_logger("code_resolver")
 
@@ -15,8 +16,8 @@ class CodeResolver:
     """从文本中提取关联的 A 股代码"""
 
     def __init__(self):
-        self._name_map: dict[str, str] = {}       # "招商银行" → "600036.SH"
-        self._prefix_map: dict[str, str] = {}     # "600036" → "600036.SH"
+        self._name_map: dict[str, str] = {}  # "招商银行" → "600036.SH"
+        self._prefix_map: dict[str, str] = {}  # "600036" → "600036.SH"
         self._loaded = False
 
     def _ensure_loaded(self):
@@ -24,6 +25,7 @@ class CodeResolver:
             return
         from core.database import db_session
         from models.quant_data import StockBasicInfo
+
         with db_session() as db:
             rows = db.query(StockBasicInfo.code, StockBasicInfo.name).all()
             for r in rows:
@@ -37,7 +39,7 @@ class CodeResolver:
         self._loaded = True
         log.info("code_resolver_loaded", names=len(self._name_map), prefixes=len(self._prefix_map))
 
-    def resolve(self, text: str, *, force_code: Optional[str] = None, max_codes: int = 5) -> List[str]:
+    def resolve(self, text: str, *, force_code: str | None = None, max_codes: int = 5) -> list[str]:
         """
         从文本中提取关联股票代码。
 
@@ -57,7 +59,7 @@ class CodeResolver:
                 matched.add(code)
 
         # 2. 6 位数字代码匹配（不限开头，覆盖 ETF/可转债）
-        for d in re.findall(r'(?<!\d)\d{6}(?!\d)', text):
+        for d in re.findall(r"(?<!\d)\d{6}(?!\d)", text):
             if d in self._prefix_map:
                 matched.add(self._prefix_map[d])
 
@@ -72,7 +74,7 @@ class CodeResolver:
             return []
         return list(matched)
 
-    def to_ts_code(self, prefix: str) -> Optional[str]:
+    def to_ts_code(self, prefix: str) -> str | None:
         """
         将 6 位纯数字代码转为 ts_code。
         优先查数据库映射，查不到则按交易所规则猜测。
@@ -86,7 +88,7 @@ class CodeResolver:
         # 兜底：按交易所前缀规则（5/6/7/9 开头 → 上交所 .SH）
         return f"{prefix}.SH" if prefix[0] in "5679" else f"{prefix}.SZ"
 
-    def search_codes(self, keyword: str, max_results: int = 10) -> List[str]:
+    def search_codes(self, keyword: str, max_results: int = 10) -> list[str]:
         """
         模糊搜索：将关键词解析为可能关联的股票代码列表。
         支持: 精确名称、部分名称、代码前缀。

@@ -6,9 +6,10 @@
 数据源优先级: 本地 DB → Tushare API → AkShare 兜底
 """
 
+from typing import Any
+
 import pandas as pd
 import structlog
-from typing import Optional, Dict, Any
 
 from utils.cache_manager import cache_data
 
@@ -18,7 +19,7 @@ log = structlog.get_logger(__name__)
 class SentimentService:
     """情绪面因子聚合（资金流向 + 盈利预测）"""
 
-    def __init__(self, sources: Dict):
+    def __init__(self, sources: dict):
         """
         Args:
             sources: StockService._sources 数据源字典
@@ -26,7 +27,7 @@ class SentimentService:
         self._sources = sources
 
     @cache_data(expire_days=7)
-    def get_akshare_market_forecast(self) -> Optional[pd.DataFrame]:
+    def get_akshare_market_forecast(self) -> pd.DataFrame | None:
         """获取全市场机构盈利预测数据"""
         try:
             if "akshare" not in self._sources:
@@ -39,7 +40,7 @@ class SentimentService:
             return None
 
     @cache_data(expire_days=7)
-    def get_tushare_forecast(self, code: str) -> Optional[Dict[str, Any]]:
+    def get_tushare_forecast(self, code: str) -> dict[str, Any] | None:
         """获取业绩预告数据 (120积分可用)"""
         try:
             if "tushare" not in self._sources:
@@ -50,6 +51,7 @@ class SentimentService:
             ts_code = ts_source._format_ts_code(code)
 
             import data_sources.tushare_source as tushare_module
+
             @tushare_module.with_tushare_retry(max_retries=2, delay=1.0)
             def _fetch():
                 return ts_source.pro.forecast(ts_code=ts_code)
@@ -70,7 +72,7 @@ class SentimentService:
             return None
 
     @cache_data(expire_days=1)
-    def get_tushare_moneyflow(self, code: str, days: int = 3) -> Optional[Dict[str, Any]]:
+    def get_tushare_moneyflow(self, code: str, days: int = 3) -> dict[str, Any] | None:
         """获取个股资金流向 (2000积分可用)"""
         try:
             if "tushare" not in self._sources:
@@ -81,6 +83,7 @@ class SentimentService:
             ts_code = ts_source._format_ts_code(code)
 
             import data_sources.tushare_source as tushare_module
+
             @tushare_module.with_tushare_retry(max_retries=2, delay=1.0)
             def _fetch():
                 return ts_source.pro.moneyflow(ts_code=ts_code, limit=days)
@@ -88,14 +91,14 @@ class SentimentService:
             mf_df = _fetch()
             if mf_df is not None and not mf_df.empty:
                 result = {}
-                if 'buy_lg_amount' in mf_df.columns and 'sell_lg_amount' in mf_df.columns:
-                    net_flow = (mf_df['buy_lg_amount'] - mf_df['sell_lg_amount']).mean()
-                    total_flow = (mf_df['buy_lg_amount'] + mf_df['sell_lg_amount']).mean()
+                if "buy_lg_amount" in mf_df.columns and "sell_lg_amount" in mf_df.columns:
+                    net_flow = (mf_df["buy_lg_amount"] - mf_df["sell_lg_amount"]).mean()
+                    total_flow = (mf_df["buy_lg_amount"] + mf_df["sell_lg_amount"]).mean()
                     if total_flow > 0:
                         result["net_inflow_ratio"] = float(net_flow / total_flow * 100)
-                if 'buy_md_amount' in mf_df.columns:
-                    result["buy_lg_amount"] = float(mf_df['buy_lg_amount'].mean())
-                    result["sell_lg_amount"] = float(mf_df['sell_lg_amount'].mean())
+                if "buy_md_amount" in mf_df.columns:
+                    result["buy_lg_amount"] = float(mf_df["buy_lg_amount"].mean())
+                    result["sell_lg_amount"] = float(mf_df["sell_lg_amount"].mean())
                 return result if result else None
             return None
         except Exception as e:
@@ -106,7 +109,7 @@ class SentimentService:
             return None
 
     @cache_data(expire_days=1)
-    def get_sentiment_factors(self, code: str) -> Optional[Dict[str, Any]]:
+    def get_sentiment_factors(self, code: str) -> dict[str, Any] | None:
         """
         情绪面因子聚合入口。
         降级链: 本地 DB → Tushare moneyflow → AkShare → Tushare forecast → AkShare forecast
@@ -119,10 +122,14 @@ class SentimentService:
         try:
             from core.database import db_session
             from models.quant_data import StockMoneyFlow
+
             with db_session() as db:
-                row = db.query(StockMoneyFlow).filter(
-                    StockMoneyFlow.code == code
-                ).order_by(StockMoneyFlow.trade_date.desc()).first()
+                row = (
+                    db.query(StockMoneyFlow)
+                    .filter(StockMoneyFlow.code == code)
+                    .order_by(StockMoneyFlow.trade_date.desc())
+                    .first()
+                )
                 if row and row.net_mf_amount is not None:
                     result["net_inflow_ratio"] = float(row.net_mf_amount)
         except (AttributeError, TypeError):
@@ -147,12 +154,10 @@ class SentimentService:
                 flow_df = ak.ak.stock_individual_fund_flow(stock=code)
                 if flow_df is not None and len(flow_df) >= 3:
                     recent = flow_df.tail(3)
-                    ratio_cols = [c for c in flow_df.columns
-                                  if '主力净流入' in c and ('占比' in c or '净占' in c)]
+                    ratio_cols = [c for c in flow_df.columns if "主力净流入" in c and ("占比" in c or "净占" in c)]
                     if ratio_cols:
                         vals = pd.to_numeric(
-                            recent[ratio_cols[0]].astype(str).str.replace('%', ''),
-                            errors='coerce'
+                            recent[ratio_cols[0]].astype(str).str.replace("%", ""), errors="coerce"
                         ).fillna(0)
                         result["net_inflow_ratio"] = float(vals.mean())
             except (AttributeError, TypeError):

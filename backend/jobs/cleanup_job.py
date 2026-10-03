@@ -11,14 +11,15 @@
   - 每天凌晨 2 点执行一次
 """
 
-import shutil
 import pathlib
-import structlog
+import shutil
 from datetime import datetime, timedelta
+
+import structlog
 
 log = structlog.get_logger("cleanup_job")
 
-from settings import DB_RETAIN_YEARS, CACHE_RETAIN_DAYS, LOG_RETAIN_DAYS, BACKTEST_RESULT_RETAIN_DAYS, NEWS_RETAIN_DAYS
+from settings import BACKTEST_RESULT_RETAIN_DAYS, CACHE_RETAIN_DAYS, DB_RETAIN_YEARS, LOG_RETAIN_DAYS, NEWS_RETAIN_DAYS
 
 
 def cleanup_database(retain_years: int = DB_RETAIN_YEARS) -> dict:
@@ -28,102 +29,131 @@ def cleanup_database(retain_years: int = DB_RETAIN_YEARS) -> dict:
     不清理：basic_info / financials / shareholder_count（基本面数据量小，全量保留）
     """
     from core.database import db_session
+    from models.all_models import BacktestResult
     from models.quant_data import (
-        StockDailyBar, StockDailyFactor, StockMoneyFlow, StockMarginData, StockNews,
-        EtfDailyBar, EtfBasicInfo, ConvertibleBondBar, ConvertibleBondFactor,
-        IndustryIndexDaily, FactorSnapshot, EtfFundSnapshot,
+        ConvertibleBondBar,
+        ConvertibleBondFactor,
+        EtfBasicInfo,
+        EtfDailyBar,
+        EtfFundSnapshot,
+        FactorSnapshot,
+        IndustryIndexDaily,
+        StockDailyBar,
+        StockDailyFactor,
+        StockMarginData,
+        StockMoneyFlow,
+        StockNews,
         StockShareholderCount,
     )
-    from models.all_models import BacktestResult
 
     cutoff = (datetime.now() - timedelta(days=retain_years * 365)).strftime("%Y-%m-%d")
     stats = {}
     with db_session() as db:
         try:
             # ── 股票 ──
-            stats["stock_daily_bars"] = db.query(StockDailyBar)\
-                .filter(StockDailyBar.trade_date < cutoff)\
-                .delete(synchronize_session=False)
+            stats["stock_daily_bars"] = (
+                db.query(StockDailyBar).filter(StockDailyBar.trade_date < cutoff).delete(synchronize_session=False)
+            )
 
-            stats["stock_daily_factors"] = db.query(StockDailyFactor)\
-                .filter(StockDailyFactor.trade_date < cutoff)\
+            stats["stock_daily_factors"] = (
+                db.query(StockDailyFactor)
+                .filter(StockDailyFactor.trade_date < cutoff)
                 .delete(synchronize_session=False)
+            )
 
-            stats["stock_money_flow"] = db.query(StockMoneyFlow)\
-                .filter(StockMoneyFlow.trade_date < cutoff)\
-                .delete(synchronize_session=False)
+            stats["stock_money_flow"] = (
+                db.query(StockMoneyFlow).filter(StockMoneyFlow.trade_date < cutoff).delete(synchronize_session=False)
+            )
 
-            stats["stock_margin_data"] = db.query(StockMarginData)\
-                .filter(StockMarginData.trade_date < cutoff)\
-                .delete(synchronize_session=False)
+            stats["stock_margin_data"] = (
+                db.query(StockMarginData).filter(StockMarginData.trade_date < cutoff).delete(synchronize_session=False)
+            )
 
             # ── ETF ──
-            stats["etf_daily_bars"] = db.query(EtfDailyBar)\
-                .filter(EtfDailyBar.trade_date < cutoff)\
-                .delete(synchronize_session=False)
+            stats["etf_daily_bars"] = (
+                db.query(EtfDailyBar).filter(EtfDailyBar.trade_date < cutoff).delete(synchronize_session=False)
+            )
 
-            stats["etf_fund_snapshot"] = db.query(EtfFundSnapshot)\
-                .filter(EtfFundSnapshot.trade_date < cutoff)\
-                .delete(synchronize_session=False)
+            stats["etf_fund_snapshot"] = (
+                db.query(EtfFundSnapshot).filter(EtfFundSnapshot.trade_date < cutoff).delete(synchronize_session=False)
+            )
 
             # 孤儿清理：snapshot/bar 中存在但 basic_info 中不存在的 ETF（清盘/退市残留）
-            active_codes = set(r[0] for r in db.query(EtfBasicInfo.code).all())
+            active_codes = {r[0] for r in db.query(EtfBasicInfo.code).all()}
             if active_codes:
-                snap_orphans = set(r[0] for r in db.query(EtfFundSnapshot.code.distinct()).all()) - active_codes
-                bar_orphans = set(r[0] for r in db.query(EtfDailyBar.code.distinct()).all()) - active_codes
+                snap_orphans = {r[0] for r in db.query(EtfFundSnapshot.code.distinct()).all()} - active_codes
+                bar_orphans = {r[0] for r in db.query(EtfDailyBar.code.distinct()).all()} - active_codes
                 orphan_del = 0
                 if snap_orphans:
-                    orphan_del += db.query(EtfFundSnapshot)\
-                        .filter(EtfFundSnapshot.code.in_(list(snap_orphans)))\
+                    orphan_del += (
+                        db.query(EtfFundSnapshot)
+                        .filter(EtfFundSnapshot.code.in_(list(snap_orphans)))
                         .delete(synchronize_session=False)
+                    )
                 if bar_orphans:
-                    orphan_del += db.query(EtfDailyBar)\
-                        .filter(EtfDailyBar.code.in_(list(bar_orphans)))\
+                    orphan_del += (
+                        db.query(EtfDailyBar)
+                        .filter(EtfDailyBar.code.in_(list(bar_orphans)))
                         .delete(synchronize_session=False)
+                    )
                 if orphan_del:
                     stats["etf_orphan_cleanup"] = orphan_del
 
             # ── 可转债 ──
-            stats["convertible_bond_bar"] = db.query(ConvertibleBondBar)\
-                .filter(ConvertibleBondBar.trade_date < cutoff)\
+            stats["convertible_bond_bar"] = (
+                db.query(ConvertibleBondBar)
+                .filter(ConvertibleBondBar.trade_date < cutoff)
                 .delete(synchronize_session=False)
+            )
 
-            stats["convertible_bond_factor"] = db.query(ConvertibleBondFactor)\
-                .filter(ConvertibleBondFactor.trade_date < cutoff)\
+            stats["convertible_bond_factor"] = (
+                db.query(ConvertibleBondFactor)
+                .filter(ConvertibleBondFactor.trade_date < cutoff)
                 .delete(synchronize_session=False)
+            )
 
             # ── 行业指数 + 评分快照 ──
-            stats["industry_index_daily"] = db.query(IndustryIndexDaily)\
-                .filter(IndustryIndexDaily.trade_date < cutoff)\
+            stats["industry_index_daily"] = (
+                db.query(IndustryIndexDaily)
+                .filter(IndustryIndexDaily.trade_date < cutoff)
                 .delete(synchronize_session=False)
+            )
 
-            stats["factor_snapshot"] = db.query(FactorSnapshot)\
-                .filter(FactorSnapshot.trade_date < cutoff)\
-                .delete(synchronize_session=False)
+            stats["factor_snapshot"] = (
+                db.query(FactorSnapshot).filter(FactorSnapshot.trade_date < cutoff).delete(synchronize_session=False)
+            )
 
             # ── 股东户数 ──
-            stats["stock_shareholder_count"] = db.query(StockShareholderCount)\
-                .filter(StockShareholderCount.end_date < cutoff)\
+            stats["stock_shareholder_count"] = (
+                db.query(StockShareholderCount)
+                .filter(StockShareholderCount.end_date < cutoff)
                 .delete(synchronize_session=False)
+            )
 
             # ── 新闻：结构化事件按 DB_RETAIN_YEARS，普通新闻按 NEWS_RETAIN_DAYS ──
-            stats["structured_events"] = db.query(StockNews)\
-                .filter(StockNews.created_at < cutoff,
-                        StockNews.nlp_reason.like("[规则]%"))\
+            stats["structured_events"] = (
+                db.query(StockNews)
+                .filter(StockNews.created_at < cutoff, StockNews.nlp_reason.like("[规则]%"))
                 .delete(synchronize_session=False)
+            )
 
             from sqlalchemy import or_
+
             news_cutoff = datetime.now() - timedelta(days=NEWS_RETAIN_DAYS)
-            stats["old_news"] = db.query(StockNews)\
-                .filter(StockNews.created_at < news_cutoff,
-                        or_(StockNews.nlp_reason.is_(None), ~StockNews.nlp_reason.like("[规则]%")))\
+            stats["old_news"] = (
+                db.query(StockNews)
+                .filter(
+                    StockNews.created_at < news_cutoff,
+                    or_(StockNews.nlp_reason.is_(None), ~StockNews.nlp_reason.like("[规则]%")),
+                )
                 .delete(synchronize_session=False)
+            )
 
             # ── 回测结果 ──
             bt_cutoff = datetime.now() - timedelta(days=BACKTEST_RESULT_RETAIN_DAYS)
-            stats["backtest_results"] = db.query(BacktestResult)\
-                .filter(BacktestResult.created_at < bt_cutoff)\
-                .delete(synchronize_session=False)
+            stats["backtest_results"] = (
+                db.query(BacktestResult).filter(BacktestResult.created_at < bt_cutoff).delete(synchronize_session=False)
+            )
 
             log.info("db_cleanup_done", cutoff=cutoff, stats=stats)
         except Exception as e:
@@ -135,18 +165,18 @@ def cleanup_database(retain_years: int = DB_RETAIN_YEARS) -> dict:
 def cleanup_cache(retain_days: int = CACHE_RETAIN_DAYS) -> int:
     """清理 cache_data/ 目录下超过 retain_days 天的 .pkl 缓存文件"""
     from utils.cache_manager import cache_manager
+
     cache_manager.cleanup_expired(max_age_days=retain_days)
 
     # 清理 routers/factors.py 的 TTL 内存缓存（过期条目）
     try:
-        from routers.factors import _factor_cache, _factor_cache_lock, _FACTOR_TTL
         import time as _time
+
+        from routers.factors import _FACTOR_TTL, _factor_cache, _factor_cache_lock
+
         now = _time.time()
         with _factor_cache_lock:
-            expired_keys = [
-                k for k, entry in list(_factor_cache.items())
-                if now - entry.get('ts', 0) > _FACTOR_TTL
-            ]
+            expired_keys = [k for k, entry in list(_factor_cache.items()) if now - entry.get("ts", 0) > _FACTOR_TTL]
             for k in expired_keys:
                 del _factor_cache[k]
         if expired_keys:
@@ -232,15 +262,17 @@ def run_all_cleanups() -> dict:
     # 清理内存中已完成的旧任务（防止无限膨胀）
     try:
         from utils.task_store import task_store
+
         task_store.cleanup_old_tasks(max_age_seconds=3600)
     except Exception:
         pass
 
-
-
-    log.info("cleanup_all_done", summary={
-        "db_rows_deleted": sum(results["db"].values()),
-        "cache_entries_cleared": results["cache_expired_entries"],
-        "pycache_dirs": results["files"]["pycache"],
-    })
+    log.info(
+        "cleanup_all_done",
+        summary={
+            "db_rows_deleted": sum(results["db"].values()),
+            "cache_entries_cleared": results["cache_expired_entries"],
+            "pycache_dirs": results["files"]["pycache"],
+        },
+    )
     return results

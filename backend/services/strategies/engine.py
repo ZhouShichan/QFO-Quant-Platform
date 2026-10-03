@@ -5,10 +5,10 @@
 所有策略共享同一引擎，不含任何策略逻辑。
 """
 
+from dataclasses import dataclass, field
+
 import numpy as np
 import structlog
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 from settings import RF_ANNUAL, TRADING_DAYS
 
@@ -18,6 +18,7 @@ log = structlog.get_logger(__name__)
 @dataclass
 class BacktestResult:
     """回测结果数据类"""
+
     start_value: float = 0
     end_value: float = 0
     total_return: float = 0
@@ -75,11 +76,11 @@ class BacktestEngine:
         self,
         portfolio_rets: np.ndarray,
         initial_cash: float,
-        rebal_indices: List[int],
+        rebal_indices: list[int],
         T: int,
-        bench_daily: Optional[List[float]],
-        trade_markers: Dict[str, list],
-        dates: Optional[List[str]] = None,
+        bench_daily: list[float] | None,
+        trade_markers: dict[str, list],
+        dates: list[str] | None = None,
     ) -> BacktestResult:
         """
         根据组合日收益序列计算全部绩效指标。
@@ -157,21 +158,16 @@ class BacktestEngine:
         )
 
     @staticmethod
-    def _calc_monthly_returns(
-        portfolio_rets: np.ndarray, dates: Optional[List[str]]
-    ) -> list:
+    def _calc_monthly_returns(portfolio_rets: np.ndarray, dates: list[str] | None) -> list:
         """按月聚合收益率，返回 [{month, return}, ...]"""
         if dates is None or len(dates) < 2:
             return []
         # dates 比 portfolio_rets 多 1 个元素（dates[0] 对应初始日）
         ret_dates = dates[1:] if len(dates) > len(portfolio_rets) else dates
         monthly = {}
-        for d, r in zip(ret_dates, portfolio_rets):
+        for d, r in zip(ret_dates, portfolio_rets, strict=False):
             m = d[:7]  # "2025-01"
             if m not in monthly:
                 monthly[m] = 1.0
-            monthly[m] *= (1 + r)
-        return [
-            {"month": m, "return": round(float((v - 1) * 100), 2)}
-            for m, v in sorted(monthly.items())
-        ]
+            monthly[m] *= 1 + r
+        return [{"month": m, "return": round(float((v - 1) * 100), 2)} for m, v in sorted(monthly.items())]

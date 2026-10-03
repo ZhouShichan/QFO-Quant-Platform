@@ -1,22 +1,22 @@
 """
 截面评分 + 向量化打分 + IC 分析
 """
-import structlog
+
 import numpy as np
 import pandas as pd
-from typing import Dict, List
+import structlog
 
-from services.factors.utils import make_serializable, robust_zscore
 from services.factors.calculator import get_factor_col_map, get_factor_labels
+from services.factors.utils import make_serializable, robust_zscore
 
 log = structlog.get_logger(__name__)
 
 
 def cross_sectional_normalize(
-    results: List[Dict],
-    factor_weights: Dict[str, float],
-    selected_factors: Dict[str, bool],
-) -> List[Dict]:
+    results: list[dict],
+    factor_weights: dict[str, float],
+    selected_factors: dict[str, bool],
+) -> list[dict]:
     """双重中性化截面标准化：市值正交化 + 行业内去极值Z-Score"""
     if len(results) < 10:
         # 样本不足 10 无法稳定执行 OLS 中性化，直接跳过
@@ -73,7 +73,7 @@ def cross_sectional_normalize(
             mapped_scores = 50 + z_scores * 15
             mapped_scores_all = np.clip(mapped_scores, 0, 100)
         else:
-            for ind, indices in industry_groups.items():
+            for _ind, indices in industry_groups.items():
                 ind_vals = neutral_vals[indices]
 
                 if len(ind_vals) < 2:
@@ -97,9 +97,9 @@ def cross_sectional_normalize(
 
 
 def calc_composite_score(
-    factor_scores: Dict[str, float],
-    selected_factors: Dict[str, bool],
-    factor_weights: Dict[str, float],
+    factor_scores: dict[str, float],
+    selected_factors: dict[str, bool],
+    factor_weights: dict[str, float],
 ) -> float:
     """计算综合得分（加权平均）"""
     total_weight = 0
@@ -129,8 +129,6 @@ def score_factors_vectorized(
     """
     if df.empty:
         return []
-
-    scored = df[["code"]].copy()
 
     factor_col_map = get_factor_col_map()
 
@@ -257,13 +255,18 @@ def analyze_factor_ic(
         for factor_name in FACTOR_COL:
             ics = ic_series.get(factor_name, [])
             if len(ics) < 2:
-                results.append({
-                    "name": factor_name,
-                    "label": FACTOR_LABELS.get(factor_name, factor_name),
-                    "ic_mean": None, "ic_std": None, "ic_ir": None,
-                    "current_weight": factor_weights.get(factor_name, 0),
-                    "suggested_weight": 0, "verdict": "数据不足",
-                })
+                results.append(
+                    {
+                        "name": factor_name,
+                        "label": FACTOR_LABELS.get(factor_name, factor_name),
+                        "ic_mean": None,
+                        "ic_std": None,
+                        "ic_ir": None,
+                        "current_weight": factor_weights.get(factor_name, 0),
+                        "suggested_weight": 0,
+                        "verdict": "数据不足",
+                    }
+                )
                 continue
 
             ic_mean = float(np.mean(ics))
@@ -283,17 +286,19 @@ def analyze_factor_ic(
             else:
                 verdict = "❌ 无效"
 
-            results.append({
-                "name": factor_name,
-                "label": FACTOR_LABELS.get(factor_name, factor_name),
-                "ic_mean": round(ic_mean, 4),
-                "ic_std": round(ic_std, 4),
-                "ic_ir": round(icir, 4),
-                "ic_count": len(ics),
-                "current_weight": round(factor_weights.get(factor_name, 0), 4),
-                "suggested_weight": 0,
-                "verdict": verdict,
-            })
+            results.append(
+                {
+                    "name": factor_name,
+                    "label": FACTOR_LABELS.get(factor_name, factor_name),
+                    "ic_mean": round(ic_mean, 4),
+                    "ic_std": round(ic_std, 4),
+                    "ic_ir": round(icir, 4),
+                    "ic_count": len(ics),
+                    "current_weight": round(factor_weights.get(factor_name, 0), 4),
+                    "suggested_weight": 0,
+                    "verdict": verdict,
+                }
+            )
 
         # 推荐权重
         total_ir = sum(ic_ir_map.values())
@@ -335,24 +340,36 @@ def analyze_factor_ic(
             sub_vals.append(ranked)
 
         if not sub_vals:
-            results.append({
-                "name": factor_name, "label": FACTOR_LABELS.get(factor_name, factor_name),
-                "ic_mean": None, "ic_std": None, "ic_ir": None,
-                "current_weight": factor_weights.get(factor_name, 0),
-                "suggested_weight": 0, "verdict": "数据不足",
-            })
+            results.append(
+                {
+                    "name": factor_name,
+                    "label": FACTOR_LABELS.get(factor_name, factor_name),
+                    "ic_mean": None,
+                    "ic_std": None,
+                    "ic_ir": None,
+                    "current_weight": factor_weights.get(factor_name, 0),
+                    "suggested_weight": 0,
+                    "verdict": "数据不足",
+                }
+            )
             continue
 
         factor_score = np.nanmean(np.stack([v.values for v in sub_vals], axis=0), axis=0)
         valid = np.isfinite(factor_score) & np.isfinite(forward_ret.values)
 
         if valid.sum() < 5:
-            results.append({
-                "name": factor_name, "label": FACTOR_LABELS.get(factor_name, factor_name),
-                "ic_mean": None, "ic_std": None, "ic_ir": None,
-                "current_weight": factor_weights.get(factor_name, 0),
-                "suggested_weight": 0, "verdict": "数据不足",
-            })
+            results.append(
+                {
+                    "name": factor_name,
+                    "label": FACTOR_LABELS.get(factor_name, factor_name),
+                    "ic_mean": None,
+                    "ic_std": None,
+                    "ic_ir": None,
+                    "current_weight": factor_weights.get(factor_name, 0),
+                    "suggested_weight": 0,
+                    "verdict": "数据不足",
+                }
+            )
             continue
 
         ic, _ = sp_stats.spearmanr(factor_score[valid], forward_ret.values[valid])
@@ -368,16 +385,18 @@ def analyze_factor_ic(
         else:
             verdict = "❌ 无效"
 
-        results.append({
-            "name": factor_name,
-            "label": FACTOR_LABELS.get(factor_name, factor_name),
-            "ic_mean": round(ic, 4),
-            "ic_std": None,
-            "ic_ir": round(abs_ic, 4),
-            "current_weight": round(factor_weights.get(factor_name, 0), 4),
-            "suggested_weight": 0,
-            "verdict": verdict,
-        })
+        results.append(
+            {
+                "name": factor_name,
+                "label": FACTOR_LABELS.get(factor_name, factor_name),
+                "ic_mean": round(ic, 4),
+                "ic_std": None,
+                "ic_ir": round(abs_ic, 4),
+                "current_weight": round(factor_weights.get(factor_name, 0), 4),
+                "suggested_weight": 0,
+                "verdict": verdict,
+            }
+        )
 
     total_ic = sum(ic_ir_map.values())
     suggested = {k: round(v / total_ic, 4) for k, v in ic_ir_map.items()} if total_ic > 0 else {}
@@ -400,6 +419,7 @@ def compute_ic_decay() -> dict:
     从路由层剥离的纯业务逻辑。
     """
     from scipy import stats as sp_stats
+
     from core.database import db_session
     from models.quant_data import StockDailyBar
 
@@ -408,39 +428,63 @@ def compute_ic_decay() -> dict:
     FACTOR_LABELS = get_factor_labels()
 
     with db_session() as db:
-        dates = [r[0] for r in db.query(StockDailyBar.trade_date).distinct()
-                 .order_by(StockDailyBar.trade_date.desc()).limit(120).all()]
+        dates = [
+            r[0]
+            for r in db.query(StockDailyBar.trade_date)
+            .distinct()
+            .order_by(StockDailyBar.trade_date.desc())
+            .limit(120)
+            .all()
+        ]
         if len(dates) < 70:
             return {"error": "数据不足，至少需要 70 个交易日"}
         dates.sort()
 
         from models.quant_data import StockDailyFactor
 
-        rows = db.query(
-            StockDailyBar.code, StockDailyBar.trade_date, StockDailyBar.close,
-            StockDailyBar.pct_chg, StockDailyBar.volume,
-            StockDailyFactor.pe_ttm, StockDailyFactor.pb, StockDailyFactor.ps_ttm,
-            StockDailyFactor.total_mv, StockDailyFactor.turnover_rate,
-        ).join(
-            StockDailyFactor,
-            (StockDailyBar.code == StockDailyFactor.code) &
-            (StockDailyBar.trade_date == StockDailyFactor.trade_date),
-            isouter=True,
-        ).filter(StockDailyBar.trade_date.in_(dates)).all()
+        rows = (
+            db.query(
+                StockDailyBar.code,
+                StockDailyBar.trade_date,
+                StockDailyBar.close,
+                StockDailyBar.pct_chg,
+                StockDailyBar.volume,
+                StockDailyFactor.pe_ttm,
+                StockDailyFactor.pb,
+                StockDailyFactor.ps_ttm,
+                StockDailyFactor.total_mv,
+                StockDailyFactor.turnover_rate,
+            )
+            .join(
+                StockDailyFactor,
+                (StockDailyBar.code == StockDailyFactor.code)
+                & (StockDailyBar.trade_date == StockDailyFactor.trade_date),
+                isouter=True,
+            )
+            .filter(StockDailyBar.trade_date.in_(dates))
+            .all()
+        )
 
-        df = pd.DataFrame(rows, columns=[
-            "code", "trade_date", "close",
-            "pct_chg", "vol",
-            "pe_ttm", "pb", "ps_ttm",
-            "total_mv", "turnover_rate",
-        ])
+        df = pd.DataFrame(
+            rows,
+            columns=[
+                "code",
+                "trade_date",
+                "close",
+                "pct_chg",
+                "vol",
+                "pe_ttm",
+                "pb",
+                "ps_ttm",
+                "total_mv",
+                "turnover_rate",
+            ],
+        )
         df["trade_date"] = pd.to_datetime(df["trade_date"])
         df.sort_values(["code", "trade_date"], inplace=True)
 
         for h in HORIZONS:
-            df[f"fwd_{h}d"] = df.groupby("code")["close"].transform(
-                lambda s: s.shift(-h) / s - 1
-            )
+            df[f"fwd_{h}d"] = df.groupby("code")["close"].transform(lambda s: s.shift(-h) / s - 1)  # noqa: B023  # lambda 在 transform 内立即执行，晚绑定无影响
 
         mid_date = dates[-61] if len(dates) > 61 else dates[len(dates) // 2]
         snap = df[df["trade_date"] == pd.Timestamp(mid_date)].copy()
@@ -483,4 +527,3 @@ def compute_ic_decay() -> dict:
             "snapshot_date": mid_date,
             "stock_count": len(snap),
         }
-

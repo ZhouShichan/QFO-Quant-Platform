@@ -4,14 +4,15 @@ system_config.py
 系统配置统一管理：读写 .env + .notify_config.json，供前端设置面板使用。
 Token 类字段脱敏返回，PUT 时脱敏字段自动跳过。
 """
+
 import os
 import re
-
-import settings as _settings
 from pathlib import Path
 
 import structlog
 from fastapi import APIRouter, Request
+
+import settings as _settings
 
 _log = structlog.get_logger("system_config")
 
@@ -23,31 +24,49 @@ _ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 # .env 中需要管理的 key（顺序即前端展示顺序，按分组排列）
 _ENV_KEYS = [
     # 数据源
-    "TUSHARE_TOKEN", "TUSHARE_POINTS", "TAVILY_API_KEY",
+    "TUSHARE_TOKEN",
+    "TUSHARE_POINTS",
+    "TAVILY_API_KEY",
     # AI 模型（多渠道）
-    "LLM_CHANNELS", "ERNIE_BATCH_SIZE", "LLM_MONTHLY_BUDGET",
-    "LLM_SILICONFLOW_URL", "LLM_SILICONFLOW_KEY", "LLM_SILICONFLOW_MODEL",
-    "LLM_ANSPIRE_URL", "LLM_ANSPIRE_KEY", "LLM_ANSPIRE_MODEL",
+    "LLM_CHANNELS",
+    "ERNIE_BATCH_SIZE",
+    "LLM_MONTHLY_BUDGET",
+    "LLM_SILICONFLOW_URL",
+    "LLM_SILICONFLOW_KEY",
+    "LLM_SILICONFLOW_MODEL",
+    "LLM_ANSPIRE_URL",
+    "LLM_ANSPIRE_KEY",
+    "LLM_ANSPIRE_MODEL",
     # 向后兼容旧配置
-    "ERNIE_API_KEY", "ERNIE_MODEL_NAME",
+    "ERNIE_API_KEY",
+    "ERNIE_MODEL_NAME",
     # 服务配置
-    "API_HOST", "API_PORT",
+    "API_HOST",
+    "API_PORT",
     # 数据限速（秒/请求）
-    "TUSHARE_FETCH_SLEEP", "BOND_FETCH_SLEEP", "FINANCIAL_SLEEP",
-    "MONEYFLOW_SLEEP", "SW_INDUSTRY_SLEEP", "AKSHARE_NEWS_SLEEP",
-
+    "TUSHARE_FETCH_SLEEP",
+    "BOND_FETCH_SLEEP",
+    "FINANCIAL_SLEEP",
+    "MONEYFLOW_SLEEP",
+    "SW_INDUSTRY_SLEEP",
+    "AKSHARE_NEWS_SLEEP",
     # 并发 & 写入
-    "FINANCIAL_WORKERS", "WRITE_BATCH_SIZE",
+    "FINANCIAL_WORKERS",
+    "WRITE_BATCH_SIZE",
     # 熔断保护
-    "TUSHARE_RATE_LIMIT_PER_MIN", "TUSHARE_BREAKER_FAIL_THRESHOLD", "TUSHARE_BREAKER_COOLDOWN",
+    "TUSHARE_RATE_LIMIT_PER_MIN",
+    "TUSHARE_BREAKER_FAIL_THRESHOLD",
+    "TUSHARE_BREAKER_COOLDOWN",
     # 数据保留
-    "NEWS_RETAIN_DAYS", "BACKTEST_RESULT_RETAIN_DAYS",
-    "DB_RETAIN_YEARS", "CACHE_RETAIN_DAYS", "LOG_RETAIN_DAYS",
+    "NEWS_RETAIN_DAYS",
+    "BACKTEST_RESULT_RETAIN_DAYS",
+    "DB_RETAIN_YEARS",
+    "CACHE_RETAIN_DAYS",
+    "LOG_RETAIN_DAYS",
 ]
 
 # 需要脱敏的 key
-_SENSITIVE_KEYS = {"TUSHARE_TOKEN", "TAVILY_API_KEY", "ERNIE_API_KEY",
-                   "LLM_SILICONFLOW_KEY", "LLM_ANSPIRE_KEY"}
+_SENSITIVE_KEYS = {"TUSHARE_TOKEN", "TAVILY_API_KEY", "ERNIE_API_KEY", "LLM_SILICONFLOW_KEY", "LLM_ANSPIRE_KEY"}
 
 _MASK_PATTERN = re.compile(r"\*{4}")
 
@@ -73,7 +92,6 @@ _ENV_DEFAULTS = {
     "MONEYFLOW_SLEEP": str(_settings.MONEYFLOW_SLEEP),
     "SW_INDUSTRY_SLEEP": str(_settings.SW_INDUSTRY_SLEEP),
     "AKSHARE_NEWS_SLEEP": str(_settings.AKSHARE_NEWS_SLEEP),
-
     "FINANCIAL_WORKERS": str(_settings.FINANCIAL_WORKERS),
     "WRITE_BATCH_SIZE": str(_settings.WRITE_BATCH_SIZE),
     "TUSHARE_RATE_LIMIT_PER_MIN": str(_settings.TUSHARE_RATE_LIMIT_PER_MIN),
@@ -121,7 +139,7 @@ def _write_env(updates: dict):
     if _ENV_PATH.exists():
         lines = _ENV_PATH.read_text(encoding="utf-8").splitlines()
 
-    to_write = {k: v for k, v in updates.items() if v}   # 有值的
+    to_write = {k: v for k, v in updates.items() if v}  # 有值的
     to_delete = {k for k, v in updates.items() if not v}  # 空值=删除
 
     updated_keys = set()
@@ -169,6 +187,7 @@ async def get_config():
 
     # 构造 notify 部分（脱敏敏感字段）
     from services.notifier import load_config as _load_notify
+
     notify_config = _load_notify()
 
     # 各渠道敏感字段统一脱敏
@@ -185,48 +204,58 @@ async def get_config():
 
     # 模型价格表（前端单一数据源）
     from services.news.sentiment_llm import _MODEL_PRICING, _daily
-    model_pricing = {k: v for k, v in _MODEL_PRICING.items()}
+
+    model_pricing = dict(_MODEL_PRICING)
 
     # 近 7 天日均需 LLM 评分的新闻条数（有关联股票的）
     avg_daily_llm_news = 0
     try:
-        from core.database import db_session
         from sqlalchemy import text as _text
+
+        from core.database import db_session
+
         with db_session() as db:
-            row = db.execute(_text(
-                "SELECT COUNT(*) as c, COUNT(DISTINCT DATE(publish_time)) as d "
-                "FROM stock_news "
-                "WHERE publish_time >= DATE('now', '-7 days') "
-                "AND related_codes IS NOT NULL AND related_codes != '[]'"
-            )).fetchone()
+            row = db.execute(
+                _text(
+                    "SELECT COUNT(*) as c, COUNT(DISTINCT DATE(publish_time)) as d "
+                    "FROM stock_news "
+                    "WHERE publish_time >= DATE('now', '-7 days') "
+                    "AND related_codes IS NOT NULL AND related_codes != '[]'"
+                )
+            ).fetchone()
             if row and row[1] and row[1] > 0:
                 avg_daily_llm_news = round(row[0] / row[1])
     except Exception as e:
         _log.debug("avg_daily_llm_news_query_failed", error=str(e))
 
     # LLM 供应商状态列表（前端展示用）
-    from services.news.sentiment_llm import _load_providers, _PROVIDER_MODELS, _MODEL_PRICING
     import os as _os
+
+    from services.news.sentiment_llm import _MODEL_PRICING, _PROVIDER_MODELS, _load_providers
+
     llm_providers = []
     # 始终从 LLM_CHANNELS 构建完整列表，Key 为空也展示（前端才有输入框）
-    channels = (_os.environ.get('LLM_CHANNELS', '') or env_config.get('LLM_CHANNELS', '')).strip()
-    configured_map = {p['name']: p for p in _load_providers()}
-    for ch in (channels.split(',') if channels else []):
+    channels = (_os.environ.get("LLM_CHANNELS", "") or env_config.get("LLM_CHANNELS", "")).strip()
+    configured_map = {p["name"]: p for p in _load_providers()}
+    for ch in channels.split(",") if channels else []:
         ch = ch.strip().lower()
         if not ch:
             continue
-        prefix = f'LLM_{ch.upper()}_'
+        prefix = f"LLM_{ch.upper()}_"
         p = configured_map.get(ch, {})
         models = _PROVIDER_MODELS.get(ch, [])
-        llm_providers.append({
-            'name': ch,
-            'model': p.get('model') or _os.environ.get(f'{prefix}MODEL', ''),
-            'configured': bool(p.get('key')),
-            'models': [{'name': m, 'free': _MODEL_PRICING.get(m, {}).get('input', 1) == 0} for m in models],
-        })
+        llm_providers.append(
+            {
+                "name": ch,
+                "model": p.get("model") or _os.environ.get(f"{prefix}MODEL", ""),
+                "configured": bool(p.get("key")),
+                "models": [{"name": m, "free": _MODEL_PRICING.get(m, {}).get("input", 1) == 0} for m in models],
+            }
+        )
 
     return {
-        "env": env_config, "notify": notify_config,
+        "env": env_config,
+        "notify": notify_config,
         "model_pricing": model_pricing,
         "avg_daily_llm_news": avg_daily_llm_news,
         "llm_stats": _daily.stats,
@@ -254,7 +283,10 @@ async def update_config(request: Request):
     # 处理 notify 部分
     notify_updates = body.get("notify")
     if notify_updates is not None:
-        from services.notifier import load_config as _load_notify, save_config as _save_notify, CHANNEL_KEYS
+        from services.notifier import CHANNEL_KEYS
+        from services.notifier import load_config as _load_notify
+        from services.notifier import save_config as _save_notify
+
         current = _load_notify()
         for channel in CHANNEL_KEYS:
             if channel in notify_updates:
@@ -295,6 +327,7 @@ async def get_status():
 async def test_llm_connectivity():
     """轻量级 LLM 连通性测试：对每个已配置供应商发送最小 prompt，返回各自状态"""
     import requests as _req
+
     from services.news.sentiment_llm import _load_providers
 
     providers = _load_providers()

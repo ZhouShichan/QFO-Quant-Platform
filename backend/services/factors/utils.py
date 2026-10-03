@@ -1,6 +1,7 @@
 """
 因子计算工具函数
 """
+
 import numpy as np
 
 

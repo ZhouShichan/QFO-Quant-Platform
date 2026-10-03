@@ -6,16 +6,16 @@
 """
 
 from services.strategies.base import BaseStrategy
-from services.strategies.macd import MacdStrategy
 from services.strategies.bband import BbandStrategy
-from services.strategies.timing import TimingStrategy
-from services.strategies.turtle import TurtleStrategy
-from services.strategies.multifactor import MultifactorStrategy
 from services.strategies.double_low_cb import DoubleLowCbStrategy
-from services.strategies.volume_breakout import VolumeBreakoutStrategy
-from services.strategies.grid import GridStrategy
 from services.strategies.etf_momentum import EtfMomentumStrategy
 from services.strategies.event_driven import EventDrivenStrategy
+from services.strategies.grid import GridStrategy
+from services.strategies.macd import MacdStrategy
+from services.strategies.multifactor import MultifactorStrategy
+from services.strategies.timing import TimingStrategy
+from services.strategies.turtle import TurtleStrategy
+from services.strategies.volume_breakout import VolumeBreakoutStrategy
 
 # 注册表
 _REGISTRY: dict[str, BaseStrategy] = {}

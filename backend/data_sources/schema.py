@@ -135,8 +135,7 @@ def validate_records(
     missing_required = [f for f in required if f not in sample]
     if missing_required:
         msg = f"[{source}] 缺少必需字段: {missing_required}"
-        log.error("schema_validation_failed", source=source,
-                  missing=missing_required)
+        log.error("schema_validation_failed", source=source, missing=missing_required)
         warnings.append(msg)
         if raise_on_fail:
             raise ValueError(msg)
@@ -154,8 +153,7 @@ def validate_records(
         if ratio < min_ratio:
             msg = f"[{source}] '{field}' 有值率 {ratio:.0%} < 阈值 {min_ratio:.0%}"
             warnings.append(msg)
-            log.warning("schema_low_coverage", source=source, field=field,
-                        ratio=round(ratio, 3), threshold=min_ratio)
+            log.warning("schema_low_coverage", source=source, field=field, ratio=round(ratio, 3), threshold=min_ratio)
 
     ok = len(warnings) == 0
     if ok:

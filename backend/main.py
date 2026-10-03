@@ -17,41 +17,49 @@ sys.path.insert(0, current_dir)
 # Apply SSL fix before any other imports
 try:
     from utils.ssl_fix import apply_ssl_fix, patch_akshare
+
     apply_ssl_fix()
     patch_akshare()
 except ImportError:
     pass
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import asyncio as _asyncio
 import traceback
 from contextlib import asynccontextmanager
-from datetime import datetime as _dt, timedelta as _td
+from datetime import datetime as _dt
+from datetime import timedelta as _td
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Logging Init（必须在所有模块导入之前）
 from core.logging_config import setup_logging
+
 setup_logging()
 
 # Database Init
-from core.database import engine, Base
-from models import all_models  # 确保业务表被注册到 Base.metadata
-from models import quant_data  # noqa: F401 — 副作用导入，注册 19 个数仓表到 Base.metadata
+from core.database import Base, engine
+from models import (
+    all_models,  # 确保业务表被注册到 Base.metadata
+    quant_data,  # noqa: F401 — 副作用导入，注册 19 个数仓表到 Base.metadata
+)
+
 Base.metadata.create_all(bind=engine)
 
 
 # ── 全局 JSON 安全工具 ──
 from utils.json_utils import sanitize
 
-
 # ── 定时清理调度 ──
+
 
 async def _daily_cleanup_loop():
     import structlog as _sl
+
     _log = _sl.get_logger("cleanup_scheduler")
     while True:
         now = _dt.now()
@@ -59,12 +67,11 @@ async def _daily_cleanup_loop():
         if next_run <= now:
             next_run += _td(days=1)
         wait_secs = (next_run - now).total_seconds()
-        _log.info("cleanup_scheduled",
-                  next_run=next_run.strftime("%Y-%m-%d %H:%M"),
-                  wait_secs=int(wait_secs))
+        _log.info("cleanup_scheduled", next_run=next_run.strftime("%Y-%m-%d %H:%M"), wait_secs=int(wait_secs))
         await _asyncio.sleep(wait_secs)
         try:
             from jobs.cleanup_job import run_all_cleanups
+
             result = run_all_cleanups()
             _log.info("cleanup_done", result=result)
         except Exception as e:
@@ -75,29 +82,36 @@ async def _daily_cleanup_loop():
 
 _NEWS_CONFIG_FILE = os.path.join(current_dir, ".news_auto_config.json")
 
+
 def _load_news_config():
     """从本地文件加载配置，以上次保存的设置为准"""
     import json
+
     try:
-        with open(_NEWS_CONFIG_FILE, "r") as f:
+        with open(_NEWS_CONFIG_FILE) as f:
             cfg = json.load(f)
             return cfg.get("enabled", False), cfg.get("interval_hours", 4)
     except (FileNotFoundError, json.JSONDecodeError):
         return False, 4
 
+
 def save_news_config(enabled, hours):
     """持久化到文件"""
     import json
+
     with open(_NEWS_CONFIG_FILE, "w") as f:
         json.dump({"enabled": enabled, "interval_hours": hours}, f)
 
+
 _news_auto_enabled, _news_auto_fetch_hours = _load_news_config()
-_next_fetch_time: _dt | None = None     # 下次自动抓取时间（供 API 暴露）
-_last_fetch_time: _dt | None = None     # 上次自动抓取时间
-_fetch_now_flag = False                  # 外部请求立即执行标记
+_next_fetch_time: _dt | None = None  # 下次自动抓取时间（供 API 暴露）
+_last_fetch_time: _dt | None = None  # 上次自动抓取时间
+_fetch_now_flag = False  # 外部请求立即执行标记
+
 
 async def _news_auto_fetch_loop():
     import structlog as _sl
+
     global _news_auto_enabled, _news_auto_fetch_hours, _next_fetch_time, _last_fetch_time, _fetch_now_flag
     _log = _sl.get_logger("news_scheduler")
     if _news_auto_fetch_hours <= 0:
@@ -134,13 +148,12 @@ async def _news_auto_fetch_loop():
 
         # 执行抓取
         try:
-            from jobs.sync_news import sync_stock_news
             from core.database import db_session
+            from jobs.sync_news import sync_stock_news
             from models.quant_data import StockBasicInfo
+
             with db_session() as db:
-                rows = db.query(StockBasicInfo.code, StockBasicInfo.name).filter(
-                    StockBasicInfo.is_active == True
-                ).all()
+                rows = db.query(StockBasicInfo.code, StockBasicInfo.name).filter(StockBasicInfo.is_active == True).all()
                 names = {r.code: r.name for r in rows if r.name}
             if names:
                 count = sync_stock_news([], stock_names=names)
@@ -152,15 +165,19 @@ async def _news_auto_fetch_loop():
         # 计算下次执行时间
         _next_fetch_time = _dt.now() + _td(hours=_news_auto_fetch_hours)
 
+
 # ── 每日摘要推送 ──
+
 
 async def _daily_summary_loop():
     """按 .notify_config.json 中 summary_push_hours 定时推送新闻摘要"""
     import structlog as _sl
+
     _log = _sl.get_logger("summary_scheduler")
     while True:
         # 每轮重新读取配置，支持前端热更新
         from services.notifier import load_config
+
         push_hours = load_config().get("summary_push_hours", [])
         if not push_hours:
             # 空列表 = 关闭推送，静默等待后重新检查
@@ -183,6 +200,7 @@ async def _daily_summary_loop():
         await _asyncio.sleep(wait_secs)
         try:
             from jobs.daily_summary import send_daily_summary
+
             send_daily_summary()
         except Exception as e:
             _log.error("summary_error", error=str(e))
@@ -191,7 +209,8 @@ async def _daily_summary_loop():
 @asynccontextmanager
 async def lifespan(app):
     """FastAPI lifespan：启动时运行 DB 迁移 + 注册定时任务"""
-    from core.database import migrate_backtest_results, migrate_stock_news, migrate_financial_columns
+    from core.database import migrate_backtest_results, migrate_financial_columns, migrate_stock_news
+
     migrate_backtest_results()
     migrate_stock_news()
     migrate_financial_columns()
@@ -204,6 +223,7 @@ async def lifespan(app):
 # ── 全局 NaN/Inf 安全：自定义 JSON 编码器 ──
 import json as _json
 import math as _math
+
 import numpy as _np
 from starlette.responses import JSONResponse as _BaseJSONResponse
 
@@ -266,8 +286,6 @@ app = FastAPI(
 )
 
 
-
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -279,30 +297,27 @@ app.add_middleware(
 
 # ── 全局异常处理 ──
 
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     traceback.print_exc()
-    return SafeJSONResponse(
-        status_code=500,
-        content={"detail": f"服务端错误: {str(exc)}"}
-    )
-
+    return SafeJSONResponse(status_code=500, content={"detail": f"服务端错误: {str(exc)}"})
 
 
 # ── 注册所有路由 ──
 
-from routers.data_center import router as data_center_router
-from routers.screener import router as screener_router
-from routers.bonds import router as bonds_router
-from routers.risk import router as risk_router
-from routers.portfolio import router as portfolio_router
-from routers.stocks import router as stocks_router
-from routers.factors import router as factors_router
 from routers.backtest import router as backtest_router
-from routers.ws import router as ws_router
+from routers.bonds import router as bonds_router
+from routers.data_center import router as data_center_router
+from routers.factors import router as factors_router
 from routers.news import router as news_router
+from routers.portfolio import router as portfolio_router
 from routers.research import router as research_router
+from routers.risk import router as risk_router
+from routers.screener import router as screener_router
+from routers.stocks import router as stocks_router
 from routers.system_config import router as system_config_router
+from routers.ws import router as ws_router
 
 app.include_router(data_center_router, prefix="/api")
 app.include_router(screener_router, prefix="/api")
@@ -320,14 +335,15 @@ app.include_router(system_config_router)
 
 # ── 策略管理 CRUD（轻量，留在 main 中）──
 
+
 from fastapi import Depends
 from sqlalchemy.orm import Session
+
 from core.database import get_db
 from schemas.strategy import StrategyCreate, StrategyResponse
-from typing import List
 
 
-@app.get("/api/strategies", response_model=List[StrategyResponse])
+@app.get("/api/strategies", response_model=list[StrategyResponse])
 async def get_strategies(db: Session = Depends(get_db)):
     return db.query(all_models.Strategy).all()
 
@@ -348,11 +364,10 @@ async def create_strategy(strategy: StrategyCreate, db: Session = Depends(get_db
 
 @app.delete("/api/strategies/{strategy_id}")
 async def delete_strategy(strategy_id: int, db: Session = Depends(get_db)):
-    strategy = db.query(all_models.Strategy).filter(
-        all_models.Strategy.id == strategy_id
-    ).first()
+    strategy = db.query(all_models.Strategy).filter(all_models.Strategy.id == strategy_id).first()
     if not strategy:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail="Strategy not found")
     db.delete(strategy)
     return {"success": True}
@@ -360,22 +375,25 @@ async def delete_strategy(strategy_id: int, db: Session = Depends(get_db)):
 
 # ── 管理端点 ──
 
+
 @app.post("/api/admin/cleanup")
 async def manual_cleanup():
     try:
         from jobs.cleanup_job import run_all_cleanups
+
         result = run_all_cleanups()
         return {"status": "ok", "result": sanitize(result)}
     except Exception as e:
         from fastapi import HTTPException
-        raise HTTPException(status_code=500, detail=str(e))
+
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # ── 启动 ──
 
 if __name__ == "__main__":
-    import uvicorn
     import structlog as _sl
+    import uvicorn
 
     host = os.getenv("API_HOST", "0.0.0.0")
     port = int(os.getenv("API_PORT", "8000"))

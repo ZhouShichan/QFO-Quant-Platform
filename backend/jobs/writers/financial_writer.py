@@ -4,8 +4,8 @@
 StockFinancial 表的清洗、去重与写入。
 """
 
-import structlog
 import pandas as pd
+import structlog
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -48,25 +48,18 @@ class FinancialWriter:
                 "roe": self._safe_float(row.get("roe")),
                 "roa": self._safe_float(row.get("roa")),
                 "gross_profit_margin": self._safe_float(
-                    row.get("grossprofit_margin") if "grossprofit_margin" in row.index
+                    row.get("grossprofit_margin")
+                    if "grossprofit_margin" in row.index
                     else row.get("gross_profit_margin")
                 ),
                 "net_profit_margin": self._safe_float(
-                    row.get("netprofit_margin") if "netprofit_margin" in row.index
-                    else row.get("net_profit_margin")
+                    row.get("netprofit_margin") if "netprofit_margin" in row.index else row.get("net_profit_margin")
                 ),
-                "revenue_yoy": self._safe_float(
-                    row.get("or_yoy") if "or_yoy" in row.index
-                    else row.get("revenue_yoy")
-                ),
+                "revenue_yoy": self._safe_float(row.get("or_yoy") if "or_yoy" in row.index else row.get("revenue_yoy")),
                 "net_profit_yoy": self._safe_float(
-                    row.get("netprofit_yoy") if "netprofit_yoy" in row.index
-                    else row.get("net_profit_yoy")
+                    row.get("netprofit_yoy") if "netprofit_yoy" in row.index else row.get("net_profit_yoy")
                 ),
-                "eps": self._safe_float(
-                    row.get("eps") if "eps" in row.index
-                    else row.get("basic_eps")
-                ),
+                "eps": self._safe_float(row.get("eps") if "eps" in row.index else row.get("basic_eps")),
                 "cashflow_oper": self._safe_float(row.get("n_cashflow_act")),
                 "debt_to_assets": self._safe_float(row.get("debt_to_assets")),
             }
@@ -125,6 +118,7 @@ class FinancialWriter:
             return None
         try:
             import numpy as np
+
             f = float(val)
             return None if (np.isnan(f) or np.isinf(f)) else f
         except (ValueError, TypeError):

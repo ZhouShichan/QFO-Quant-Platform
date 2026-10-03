@@ -3,8 +3,11 @@
 ============
 从 data_sync_service.py 提取。
 """
-import structlog
+
 import time
+
+import structlog
+
 from core.database import db_session
 from utils.trade_date import _parse_date
 
@@ -14,13 +17,12 @@ log = structlog.get_logger("sync_industry")
 def sync_industry_index(ts_source, start_date: str, end_date: str) -> dict:
     """同步申万行业指数日线到 industry_index_daily 表"""
     from sqlalchemy import text as sa_text
+
     from jobs.sync_base import write_watermark
 
     t_start = time.time()
 
-    rows = ts_source.get_industry_index_daily(
-        start_date=start_date, end_date=end_date
-    )
+    rows = ts_source.get_industry_index_daily(start_date=start_date, end_date=end_date)
     if not rows:
         raise RuntimeError("行业指数数据为空，可能 IP 超限或接口不可用")
 

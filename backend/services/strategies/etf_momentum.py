@@ -1,6 +1,7 @@
 """ETF 动量轮动策略"""
 
 import numpy as np
+
 from services.strategies.base import BaseStrategy, StrategyParam
 
 
@@ -14,17 +15,19 @@ class EtfMomentumStrategy(BaseStrategy):
 
     def params_schema(self):
         return [
-            StrategyParam("lookback_days", "动量回看天数", "int", 20,
-                          min=5, max=120, step=5),
-            StrategyParam("top_n", "持仓数量", "int", 3,
-                          min=1, max=10, step=1),
-            StrategyParam("skip_days", "跳过近N天", "int", 0,
-                          min=0, max=10, step=1),
-            StrategyParam("rebalance", "调仓周期", "select", "weekly",
-                          options=[
-                              {"value": "weekly", "label": "每周"},
-                              {"value": "monthly", "label": "每月"},
-                          ]),
+            StrategyParam("lookback_days", "动量回看天数", "int", 20, min=5, max=120, step=5),
+            StrategyParam("top_n", "持仓数量", "int", 3, min=1, max=10, step=1),
+            StrategyParam("skip_days", "跳过近N天", "int", 0, min=0, max=10, step=1),
+            StrategyParam(
+                "rebalance",
+                "调仓周期",
+                "select",
+                "weekly",
+                options=[
+                    {"value": "weekly", "label": "每周"},
+                    {"value": "monthly", "label": "每月"},
+                ],
+            ),
         ]
 
     def generate_signals(self, prices, params, volume=None):

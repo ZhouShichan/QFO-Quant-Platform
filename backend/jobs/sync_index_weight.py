@@ -6,9 +6,9 @@
 """
 
 import time
-import structlog
+
 import pandas as pd
-from typing import Optional
+import structlog
 
 from core.database import db_session
 from jobs.sync_base import report_progress, write_watermark
@@ -23,7 +23,7 @@ INDEX_CODES = {
 }
 
 
-def sync_index_weight(ts_source, task_id: Optional[str] = None) -> dict:
+def sync_index_weight(ts_source, task_id: str | None = None) -> dict:
     """
     同步三大指数最新月末成分权重。
 
@@ -37,8 +37,7 @@ def sync_index_weight(ts_source, task_id: Optional[str] = None) -> dict:
 
     for idx, (idx_code, idx_name) in enumerate(INDEX_CODES.items()):
         if task_id:
-            report_progress(task_id, idx, len(INDEX_CODES),
-                            f"正在同步 {idx_name} 成分权重...")
+            report_progress(task_id, idx, len(INDEX_CODES), f"正在同步 {idx_name} 成分权重...")
         try:
             import data_sources.tushare_source as tushare_module
 
@@ -81,6 +80,7 @@ def sync_index_weight(ts_source, task_id: Optional[str] = None) -> dict:
         # 水位日期用实际拉取到的最新月末日期
         if not latest_date_str:
             from utils.trade_date import resolve_end_date
+
             latest_date_str = resolve_end_date().replace("-", "")
         write_watermark("index_weight", "any", latest_date_str, t_start, "success")
     else:
@@ -88,8 +88,9 @@ def sync_index_weight(ts_source, task_id: Optional[str] = None) -> dict:
     log.info("sync_index_weight_done", total=total_rows, duration=duration)
 
     if task_id:
-        report_progress(task_id, len(INDEX_CODES), len(INDEX_CODES),
-                        f"指数成分权重同步完成 ({total_rows}条, {duration}s)")
+        report_progress(
+            task_id, len(INDEX_CODES), len(INDEX_CODES), f"指数成分权重同步完成 ({total_rows}条, {duration}s)"
+        )
 
     return {"rows": total_rows, "detail": results}
 
@@ -116,17 +117,20 @@ def _upsert_index_weight(index_code: str, df: pd.DataFrame) -> int:
                 except (ValueError, TypeError):
                     weight = None
 
-                db.execute(text("""
+                db.execute(
+                    text("""
                     INSERT INTO index_weight (index_code, con_code, trade_date, weight)
                     VALUES (:index_code, :con_code, :trade_date, :weight)
                     ON CONFLICT(index_code, con_code, trade_date) DO UPDATE SET
                         weight=excluded.weight
-                """), {
-                    "index_code": index_code,
-                    "con_code": con_code,
-                    "trade_date": trade_date,
-                    "weight": weight,
-                })
+                """),
+                    {
+                        "index_code": index_code,
+                        "con_code": con_code,
+                        "trade_date": trade_date,
+                        "weight": weight,
+                    },
+                )
                 written += 1
             except Exception as e:
                 log.debug("index_weight_row_skip", error=str(e))

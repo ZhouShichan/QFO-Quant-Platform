@@ -6,15 +6,14 @@ Top 结果写入 FactorSnapshot 表供前端展示。
 """
 
 import time
-import structlog
 from datetime import date, timedelta
-from typing import Optional
+
+import structlog
 
 log = structlog.get_logger("signal_job")
 
 
-def generate_daily_signals(trade_date: Optional[str] = None, top_n: int = 50,
-                           universe_filters: Optional[dict] = None):
+def generate_daily_signals(trade_date: str | None = None, top_n: int = 50, universe_filters: dict | None = None):
     """
     全市场因子打分 → 写入 FactorSnapshot。
 
@@ -33,6 +32,7 @@ def generate_daily_signals(trade_date: Optional[str] = None, top_n: int = 50,
     # 日期处理：统一从工具函数获取（优先 DB 最新行情日期）
     if not trade_date:
         from utils.trade_date import get_table_latest_date
+
         trade_date = get_table_latest_date("bars")
         if not trade_date:
             log.warning("daily_signal_no_data")
@@ -44,13 +44,14 @@ def generate_daily_signals(trade_date: Optional[str] = None, top_n: int = 50,
         # 读取全市场活跃股票（带名称和上市日期，用于投资域过滤）
         from core.database import db_session
         from models.quant_data import StockBasicInfo
+
         codes = []
         with db_session() as db:
-            rows = db.query(
-                StockBasicInfo.code, StockBasicInfo.name, StockBasicInfo.list_date
-            ).filter(
-                StockBasicInfo.is_active == True
-            ).all()
+            rows = (
+                db.query(StockBasicInfo.code, StockBasicInfo.name, StockBasicInfo.list_date)
+                .filter(StockBasicInfo.is_active == True)
+                .all()
+            )
 
             cutoff_date = None
             if min_list_days > 0:
@@ -83,12 +84,11 @@ def generate_daily_signals(trade_date: Optional[str] = None, top_n: int = 50,
         start_date = start_dt.strftime("%Y-%m-%d")
 
         # 调用向量化因子打分
-        from services.stock_service import StockService
         from services.factor_service import FactorService
+        from services.stock_service import StockService
+
         fs = FactorService(StockService())
-        results = fs.calculate_factor_scores_fast(
-            codes, start_date, trade_date
-        )
+        results = fs.calculate_factor_scores_fast(codes, start_date, trade_date)
 
         if not results:
             log.warning("daily_signal_empty_results")

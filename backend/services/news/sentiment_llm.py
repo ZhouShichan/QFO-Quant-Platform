@@ -9,13 +9,14 @@
 供应商配置：.env LLM_CHANNELS + LLM_{NAME}_URL/KEY/MODEL
 降级链：供应商1 → 供应商2 → ... → 关键词评分（sentiment.py）
 """
+
 import json
-import time
 import threading
+import time
 from datetime import date as _date
-import structlog
+
 import requests
-from typing import List, Dict, Optional
+import structlog
 
 import settings
 from services.news.sentiment import score_to_label
@@ -28,19 +29,19 @@ import os as _os
 # 模型 token 单价（¥/token）— 以各供应商账单为准
 _MODEL_PRICING = {
     # SiliconFlow 实际定价（¥/token）
-    'deepseek-ai/DeepSeek-V4-Flash': {'input': 1.0e-6, 'output': 2.0e-6},
-    'Qwen/Qwen2.5-7B-Instruct': {'input': 0.3e-6, 'output': 0.7e-6},
+    "deepseek-ai/DeepSeek-V4-Flash": {"input": 1.0e-6, "output": 2.0e-6},
+    "Qwen/Qwen2.5-7B-Instruct": {"input": 0.3e-6, "output": 0.7e-6},
     # Anspire（模型名不带前缀，需独立条目）
-    'deepseek-v4-flash': {'input': 1.0e-6, 'output': 2.0e-6},
+    "deepseek-v4-flash": {"input": 1.0e-6, "output": 2.0e-6},
 }
 
 # 默认定价（未知模型兜底）
-_DEFAULT_PRICING = {'input': 1.0e-6, 'output': 2.0e-6}
+_DEFAULT_PRICING = {"input": 1.0e-6, "output": 2.0e-6}
 
 # 各供应商可选模型列表（前端下拉用）
 _PROVIDER_MODELS = {
-    'siliconflow': ['deepseek-ai/DeepSeek-V4-Flash', 'Qwen/Qwen2.5-7B-Instruct'],
-    'anspire': ['deepseek-v4-flash'],
+    "siliconflow": ["deepseek-ai/DeepSeek-V4-Flash", "Qwen/Qwen2.5-7B-Instruct"],
+    "anspire": ["deepseek-v4-flash"],
 }
 
 
@@ -50,30 +51,32 @@ def _load_providers() -> list:
     LLM_CHANNELS=siliconflow,anspire → 依次尝试
     未配置时向后兼容 ERNIE_* 单供应商模式。
     """
-    channels = (_os.environ.get('LLM_CHANNELS', '') or '').strip()
+    channels = (_os.environ.get("LLM_CHANNELS", "") or "").strip()
     if not channels:
         # 向后兼容：无 LLM_CHANNELS 时读 ERNIE_* 旧配置
-        key = _os.environ.get('ERNIE_API_KEY', '') or settings.ERNIE_API_KEY
+        key = _os.environ.get("ERNIE_API_KEY", "") or settings.ERNIE_API_KEY
         if key:
-            return [{
-                'name': 'siliconflow',
-                'url': _os.environ.get('ERNIE_MODEL_URL', '') or settings.ERNIE_MODEL_URL,
-                'key': key,
-                'model': _os.environ.get('ERNIE_MODEL_NAME', '') or settings.ERNIE_MODEL_NAME,
-            }]
+            return [
+                {
+                    "name": "siliconflow",
+                    "url": _os.environ.get("ERNIE_MODEL_URL", "") or settings.ERNIE_MODEL_URL,
+                    "key": key,
+                    "model": _os.environ.get("ERNIE_MODEL_NAME", "") or settings.ERNIE_MODEL_NAME,
+                }
+            ]
         return []
 
     providers = []
-    for ch in channels.split(','):
+    for ch in channels.split(","):
         ch = ch.strip().lower()
         if not ch:
             continue
-        prefix = f'LLM_{ch.upper()}_'
-        url = _os.environ.get(f'{prefix}URL', '')
-        key = _os.environ.get(f'{prefix}KEY', '')
-        model = _os.environ.get(f'{prefix}MODEL', '')
+        prefix = f"LLM_{ch.upper()}_"
+        url = _os.environ.get(f"{prefix}URL", "")
+        key = _os.environ.get(f"{prefix}KEY", "")
+        model = _os.environ.get(f"{prefix}MODEL", "")
         if url and key:
-            providers.append({'name': ch, 'url': url, 'key': key, 'model': model})
+            providers.append({"name": ch, "url": url, "key": key, "model": model})
     return providers
 
 
@@ -84,7 +87,7 @@ def _pricing_for(model_name: str) -> dict:
 
 def _is_free_model_by_name(model_name: str) -> bool:
     p = _pricing_for(model_name)
-    return p['input'] == 0 and p['output'] == 0
+    return p["input"] == 0 and p["output"] == 0
 
 
 def _is_free_model() -> bool:
@@ -92,23 +95,24 @@ def _is_free_model() -> bool:
     providers = _load_providers()
     if not providers:
         return True
-    return _is_free_model_by_name(providers[0].get('model', ''))
+    return _is_free_model_by_name(providers[0].get("model", ""))
 
 
-def _calc_cost(prompt_tokens: int, completion_tokens: int, model_name: str = '') -> float:
+def _calc_cost(prompt_tokens: int, completion_tokens: int, model_name: str = "") -> float:
     """根据实际 token 用量和模型计算单次费用（¥）"""
     p = _pricing_for(model_name) if model_name else _DEFAULT_PRICING
-    return prompt_tokens * p['input'] + completion_tokens * p['output']
+    return prompt_tokens * p["input"] + completion_tokens * p["output"]
 
 
 def _daily_budget() -> float:
     """日预算（¥），从月预算推导。仅付费模型调用，免费模型无预算概念"""
-    monthly = float(_os.environ.get('LLM_MONTHLY_BUDGET', '') or settings.LLM_MONTHLY_BUDGET)
+    monthly = float(_os.environ.get("LLM_MONTHLY_BUDGET", "") or settings.LLM_MONTHLY_BUDGET)
     return monthly / 30
 
 
 class _DailyCounter:
     """线程安全的日费用计数器，跨天自动重置"""
+
     def __init__(self):
         self._lock = threading.Lock()
         self._date = _date.today()
@@ -117,8 +121,6 @@ class _DailyCounter:
         self._total_completion = 0
         self._total_cost = 0.0  # ¥
         self._limit_notified = False
-
-
 
     def _reset_if_new_day(self):
         today = _date.today()
@@ -138,16 +140,16 @@ class _DailyCounter:
         - exhausted:  预算耗尽且无免费供应商，降级关键词
         """
         if _is_free_model():
-            return 'ok'
+            return "ok"
         with self._lock:
             self._reset_if_new_day()
             if self._total_cost < _daily_budget():
-                return 'ok'
+                return "ok"
         # 付费预算耗尽 → 看有没有免费供应商可用
-        free = [p for p in _load_providers() if _is_free_model_by_name(p.get('model', ''))]
-        return 'free_only' if free else 'exhausted'
+        free = [p for p in _load_providers() if _is_free_model_by_name(p.get("model", ""))]
+        return "free_only" if free else "exhausted"
 
-    def record_usage(self, prompt_tokens, completion_tokens, model_name=''):
+    def record_usage(self, prompt_tokens, completion_tokens, model_name=""):
         cost = _calc_cost(prompt_tokens, completion_tokens, model_name)
         with self._lock:
             self._reset_if_new_day()
@@ -178,6 +180,7 @@ def _notify_budget_reached():
     _daily._limit_notified = True
     try:
         from services.notifier import send_notification
+
         stats = _daily.stats
         send_notification(
             f"⚠️ LLM 日预算已耗尽（¥{stats['cost_today']:.3f}）\n"
@@ -186,6 +189,7 @@ def _notify_budget_reached():
         )
     except Exception as e:
         log.debug("limit_notify_failed", error=str(e))
+
 
 # 事件类型枚举（prompt 约束 + 前端展示 + 回测分组）
 # LLM 可分类的事件类型（prompt 中提供的选项）
@@ -207,7 +211,7 @@ _SYSTEM_PROMPT = """你是 A 股金融新闻分析师。对用户给出的每条
 - 只返回 JSON，不要 markdown 标记或其他文字"""
 
 
-def _build_user_prompt(batch: List[dict]) -> str:
+def _build_user_prompt(batch: list[dict]) -> str:
     """构造用户 prompt，每条新闻一行"""
     lines = []
     for i, item in enumerate(batch, 1):
@@ -217,9 +221,9 @@ def _build_user_prompt(batch: List[dict]) -> str:
     return "新闻列表：\n" + "\n".join(lines)
 
 
-def _call_single_provider(user_prompt: str, provider: dict) -> Optional[str]:
+def _call_single_provider(user_prompt: str, provider: dict) -> str | None:
     """调用单个 LLM 供应商，返回原始文本响应"""
-    model_name = provider['model']
+    model_name = provider["model"]
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {provider['key']}",
@@ -234,15 +238,19 @@ def _call_single_provider(user_prompt: str, provider: dict) -> Optional[str]:
         "response_format": {"type": "json_object"},
     }
     resp = requests.post(
-        provider['url'], headers=headers,
-        json=payload, timeout=getattr(settings, 'ERNIE_TIMEOUT', 30),
+        provider["url"],
+        headers=headers,
+        json=payload,
+        timeout=getattr(settings, "ERNIE_TIMEOUT", 30),
     )
     # 模型不支持 response_format 时去掉重试
     if resp.status_code == 400 and "response_format" in resp.text and "not support" in resp.text.lower():
         payload.pop("response_format", None)
         resp = requests.post(
-            provider['url'], headers=headers,
-            json=payload, timeout=getattr(settings, 'ERNIE_TIMEOUT', 30),
+            provider["url"],
+            headers=headers,
+            json=payload,
+            timeout=getattr(settings, "ERNIE_TIMEOUT", 30),
         )
     resp.raise_for_status()
     data = resp.json()
@@ -253,19 +261,25 @@ def _call_single_provider(user_prompt: str, provider: dict) -> Optional[str]:
     c_tok = usage.get("completion_tokens", 0)
     _daily.record_usage(p_tok, c_tok, model_name)
     if p_tok or c_tok:
-        log.info("llm_usage", provider=provider['name'], model=model_name,
-                 prompt_tokens=p_tok, completion_tokens=c_tok, daily=_daily.stats)
+        log.info(
+            "llm_usage",
+            provider=provider["name"],
+            model=model_name,
+            prompt_tokens=p_tok,
+            completion_tokens=c_tok,
+            daily=_daily.stats,
+        )
 
     if "choices" in data:
         return data["choices"][0]["message"]["content"]
     if "result" in data:
         return data["result"]
 
-    log.warning("llm_unexpected_response", provider=provider['name'], keys=list(data.keys()))
+    log.warning("llm_unexpected_response", provider=provider["name"], keys=list(data.keys()))
     return None
 
 
-def _call_llm(user_prompt: str, free_only: bool = False) -> Optional[str]:
+def _call_llm(user_prompt: str, free_only: bool = False) -> str | None:
     """按优先级尝试各供应商，第一个成功即返回。全失败返回 None
 
     Args:
@@ -273,7 +287,7 @@ def _call_llm(user_prompt: str, free_only: bool = False) -> Optional[str]:
     """
     providers = _load_providers()
     if free_only:
-        providers = [p for p in providers if _is_free_model_by_name(p.get('model', ''))]
+        providers = [p for p in providers if _is_free_model_by_name(p.get("model", ""))]
     if not providers:
         return None
     last_err = None
@@ -283,15 +297,14 @@ def _call_llm(user_prompt: str, free_only: bool = False) -> Optional[str]:
             if result:
                 return result
         except Exception as e:
-            log.warning("llm_provider_failed", provider=provider['name'], error=str(e))
+            log.warning("llm_provider_failed", provider=provider["name"], error=str(e))
             last_err = e
     if last_err:
-        log.error("all_llm_providers_failed", providers=[p['name'] for p in providers],
-                  error=str(last_err))
+        log.error("all_llm_providers_failed", providers=[p["name"] for p in providers], error=str(last_err))
     return None
 
 
-def _parse_response(raw: str, batch: List[dict]) -> List[dict]:
+def _parse_response(raw: str, batch: list[dict]) -> list[dict]:
     """
     解析 LLM JSON 响应 → 类型安全的结构化数据。
 
@@ -351,12 +364,14 @@ def _parse_response(raw: str, batch: List[dict]) -> List[dict]:
                 if ev not in LLM_EVENT_TYPES:
                     ev = "其他"
 
-                safe_stocks.append({
-                    "code": str(s.get("code", "")),
-                    "score": sc,
-                    "event": ev,
-                    "reason": str(s.get("reason", ""))[:100],
-                })
+                safe_stocks.append(
+                    {
+                        "code": str(s.get("code", "")),
+                        "score": sc,
+                        "event": ev,
+                        "reason": str(s.get("reason", ""))[:100],
+                    }
+                )
 
             cleaned.append({"news_idx": idx, "stocks": safe_stocks})
 
@@ -366,7 +381,7 @@ def _parse_response(raw: str, batch: List[dict]) -> List[dict]:
         return []
 
 
-def score_batch_llm(news_items: List[dict]) -> Dict[int, dict]:
+def score_batch_llm(news_items: list[dict]) -> dict[int, dict]:
     """
     批量调 LLM 评分（多供应商自动降级）。
 
@@ -385,28 +400,27 @@ def score_batch_llm(news_items: List[dict]) -> Dict[int, dict]:
 
     # 日预算前置检查
     budget_status = _daily.check_budget()
-    if budget_status == 'exhausted':
+    if budget_status == "exhausted":
         log.warning("llm_daily_budget_exhausted", stats=_daily.stats)
         _notify_budget_reached()
         return {}
-    free_only = budget_status == 'free_only'
+    free_only = budget_status == "free_only"
     if free_only:
         log.info("llm_budget_degraded_to_free", stats=_daily.stats)
 
     results = {}
-    batch_size = int(_os.environ.get('ERNIE_BATCH_SIZE', '') or settings.ERNIE_BATCH_SIZE)
+    batch_size = int(_os.environ.get("ERNIE_BATCH_SIZE", "") or settings.ERNIE_BATCH_SIZE)
 
     for start in range(0, len(news_items), batch_size):
         # 循环内逐批检查预算
         budget_status = _daily.check_budget()
-        if budget_status == 'exhausted':
-            log.warning("llm_budget_mid_batch", stats=_daily.stats,
-                        processed=start, total=len(news_items))
+        if budget_status == "exhausted":
+            log.warning("llm_budget_mid_batch", stats=_daily.stats, processed=start, total=len(news_items))
             break
-        if budget_status == 'free_only':
+        if budget_status == "free_only":
             free_only = True
 
-        batch = news_items[start:start + batch_size]
+        batch = news_items[start : start + batch_size]
         prompt = _build_user_prompt(batch)
         raw = _call_llm(prompt, free_only=free_only)
 

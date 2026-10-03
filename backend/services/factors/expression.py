@@ -14,6 +14,7 @@
 
 import ast
 import operator
+
 import numpy as np
 import pandas as pd
 import structlog
@@ -24,8 +25,20 @@ log = structlog.get_logger(__name__)
 # ── 可用变量（面板字段名） ──
 
 ALLOWED_VARIABLES = {
-    'open', 'high', 'low', 'close', 'volume', 'amount', 'pct_chg',
-    'pe_ttm', 'pb', 'ps_ttm', 'turnover_rate', 'total_mv', 'dv_ttm', 'circ_mv',
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "amount",
+    "pct_chg",
+    "pe_ttm",
+    "pb",
+    "ps_ttm",
+    "turnover_rate",
+    "total_mv",
+    "dv_ttm",
+    "circ_mv",
 }
 
 
@@ -88,12 +101,13 @@ def build_expression(preset_name: str, params: dict | None = None) -> str:
                 try:
                     final_params[k] = int(v)
                 except (ValueError, TypeError):
-                    raise ExpressionError(f"参数 '{k}' 的值 '{v}' 不是有效整数")
+                    raise ExpressionError(f"参数 '{k}' 的值 '{v}' 不是有效整数") from None
 
     return template.format(**final_params) if final_params else template
 
 
 # ── 时间序列算子（沿时间轴，每只股票独立） ──
+
 
 def _delay(x: pd.DataFrame, d: int) -> pd.DataFrame:
     """d 日前的值"""
@@ -132,23 +146,17 @@ def _ts_max(x: pd.DataFrame, d: int) -> pd.DataFrame:
 
 def _ts_rank(x: pd.DataFrame, d: int) -> pd.DataFrame:
     """d 日滚动排名百分位"""
-    return x.rolling(d, min_periods=max(2, d // 2)).apply(
-        lambda s: s.rank().iloc[-1] / len(s), raw=False
-    )
+    return x.rolling(d, min_periods=max(2, d // 2)).apply(lambda s: s.rank().iloc[-1] / len(s), raw=False)
 
 
 def _ts_argmax(x: pd.DataFrame, d: int) -> pd.DataFrame:
     """d 日内最大值位置（距今天数）"""
-    return x.rolling(d, min_periods=max(1, d // 2)).apply(
-        lambda s: np.argmax(s.values), raw=False
-    )
+    return x.rolling(d, min_periods=max(1, d // 2)).apply(lambda s: np.argmax(s.values), raw=False)
 
 
 def _ts_argmin(x: pd.DataFrame, d: int) -> pd.DataFrame:
     """d 日内最小值位置"""
-    return x.rolling(d, min_periods=max(1, d // 2)).apply(
-        lambda s: np.argmin(s.values), raw=False
-    )
+    return x.rolling(d, min_periods=max(1, d // 2)).apply(lambda s: np.argmin(s.values), raw=False)
 
 
 def _ts_corr(x: pd.DataFrame, y: pd.DataFrame, d: int) -> pd.DataFrame:
@@ -161,6 +169,7 @@ def _ts_corr(x: pd.DataFrame, y: pd.DataFrame, d: int) -> pd.DataFrame:
 
 
 # ── 截面算子（跨股票，每个交易日独立） ──
+
 
 def _rank(x: pd.DataFrame) -> pd.DataFrame:
     """截面百分位排名（每行独立 rank）"""
@@ -182,6 +191,7 @@ def _demean(x: pd.DataFrame) -> pd.DataFrame:
 
 # ── 数学函数 ──
 
+
 def _log(x):
     if isinstance(x, pd.DataFrame):
         return np.log(x.clip(lower=1e-10))
@@ -202,8 +212,8 @@ def _sign(x):
 
 def _power(x, n):
     if isinstance(x, pd.DataFrame):
-        return x ** n
-    return x ** n
+        return x**n
+    return x**n
 
 
 def _where(cond, x, y):
@@ -237,30 +247,30 @@ def _min_func(x, y):
 
 ALLOWED_FUNCTIONS = {
     # 时间序列（2参数: x, d）
-    'delay': _delay,
-    'delta': _delta,
-    'ts_mean': _ts_mean,
-    'ts_std': _ts_std,
-    'ts_sum': _ts_sum,
-    'ts_min': _ts_min,
-    'ts_max': _ts_max,
-    'ts_rank': _ts_rank,
-    'ts_argmax': _ts_argmax,
-    'ts_argmin': _ts_argmin,
+    "delay": _delay,
+    "delta": _delta,
+    "ts_mean": _ts_mean,
+    "ts_std": _ts_std,
+    "ts_sum": _ts_sum,
+    "ts_min": _ts_min,
+    "ts_max": _ts_max,
+    "ts_rank": _ts_rank,
+    "ts_argmax": _ts_argmax,
+    "ts_argmin": _ts_argmin,
     # 时间序列（3参数: x, y, d）
-    'ts_corr': _ts_corr,
+    "ts_corr": _ts_corr,
     # 截面（1参数: x）
-    'rank': _rank,
-    'zscore': _zscore,
-    'demean': _demean,
+    "rank": _rank,
+    "zscore": _zscore,
+    "demean": _demean,
     # 数学
-    'log': _log,
-    'abs': _abs,
-    'sign': _sign,
-    'power': _power,
-    'where': _where,
-    'max': _max_func,
-    'min': _min_func,
+    "log": _log,
+    "abs": _abs,
+    "sign": _sign,
+    "power": _power,
+    "where": _where,
+    "max": _max_func,
+    "min": _min_func,
 }
 
 # 二元运算符
@@ -289,6 +299,7 @@ COMPARE_OPS = {
 
 
 # ── AST 安全验证 ──
+
 
 class ExpressionError(Exception):
     """表达式解析或执行错误"""
@@ -339,12 +350,12 @@ def _validate_ast(node: ast.AST):
 
     else:
         raise ExpressionError(
-            f"不支持的语法节点: {type(node).__name__}。"
-            f"只允许: 变量、函数调用、算术运算、比较运算、数字常量"
+            f"不支持的语法节点: {type(node).__name__}。只允许: 变量、函数调用、算术运算、比较运算、数字常量"
         )
 
 
 # ── AST 求值 ──
+
 
 def _eval_node(node: ast.AST, panel: dict[str, pd.DataFrame]) -> pd.DataFrame | float:
     """递归求值 AST 节点"""
@@ -379,10 +390,7 @@ def _eval_node(node: ast.AST, panel: dict[str, pd.DataFrame]) -> pd.DataFrame | 
         var_name = node.id
         if var_name in panel:
             return panel[var_name]
-        raise ExpressionError(
-            f"变量 '{var_name}' 在面板数据中不存在。"
-            f"可用字段: {list(panel.keys())}"
-        )
+        raise ExpressionError(f"变量 '{var_name}' 在面板数据中不存在。可用字段: {list(panel.keys())}")
 
     elif isinstance(node, ast.Constant):
         return node.value
@@ -395,6 +403,7 @@ def _eval_node(node: ast.AST, panel: dict[str, pd.DataFrame]) -> pd.DataFrame | 
 
 # ── 公开 API ──
 
+
 def validate_expression(expr: str) -> tuple[bool, str]:
     """
     验证表达式是否合法。
@@ -403,7 +412,7 @@ def validate_expression(expr: str) -> tuple[bool, str]:
         (is_valid, error_message)
     """
     try:
-        tree = ast.parse(expr, mode='eval')
+        tree = ast.parse(expr, mode="eval")
         _validate_ast(tree)
         return True, ""
     except SyntaxError as e:
@@ -419,7 +428,7 @@ def get_required_fields(expr: str) -> set[str]:
     用于按需加载面板数据，避免加载多余字段。
     """
     try:
-        tree = ast.parse(expr, mode='eval')
+        tree = ast.parse(expr, mode="eval")
     except SyntaxError:
         return set()
 
@@ -449,9 +458,9 @@ def evaluate(
     """
     # 1. 解析 AST
     try:
-        tree = ast.parse(expr, mode='eval')
+        tree = ast.parse(expr, mode="eval")
     except SyntaxError as e:
-        raise ExpressionError(f"语法错误: {e.msg}")
+        raise ExpressionError(f"语法错误: {e.msg}") from e
 
     # 2. 安全验证
     _validate_ast(tree)
@@ -462,7 +471,7 @@ def evaluate(
     except ExpressionError:
         raise
     except Exception as e:
-        raise ExpressionError(f"执行出错: {e}")
+        raise ExpressionError(f"执行出错: {e}") from e
 
     # 4. 确保返回 DataFrame
     if isinstance(result, (int, float)):
@@ -472,6 +481,5 @@ def evaluate(
     elif not isinstance(result, pd.DataFrame):
         raise ExpressionError(f"表达式结果类型错误: {type(result)}")
 
-    log.info("expression_evaluated", expr=expr[:60],
-             shape=result.shape, nan_pct=round(result.isna().mean().mean(), 3))
+    log.info("expression_evaluated", expr=expr[:60], shape=result.shape, nan_pct=round(result.isna().mean().mean(), 3))
     return result

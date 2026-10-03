@@ -4,6 +4,7 @@ JSON 序列化工具
 sanitize(): 递归清除 NaN/Inf，防止 JSON 序列化崩溃。
 兼容 numpy/pandas 全部类型。
 """
+
 import math
 
 
@@ -28,7 +29,7 @@ def sanitize(obj):
     if isinstance(obj, pd.Series):
         return sanitize(obj.to_dict())
     if isinstance(obj, pd.DataFrame):
-        return sanitize(obj.to_dict(orient='records'))
+        return sanitize(obj.to_dict(orient="records"))
     # pandas NA
     if pd.isna(obj) if not isinstance(obj, (dict, list, tuple, str, bytes)) else False:
         return None

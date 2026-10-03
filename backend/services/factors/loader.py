@@ -4,18 +4,19 @@
 一次 SQL 批量拉取所有股票的截面因子原始数据。
 比逐只循环快 10-20 倍。
 """
-import structlog
+
+from collections import defaultdict
+
 import numpy as np
 import pandas as pd
-from typing import List
-from collections import defaultdict
+import structlog
 
 log = structlog.get_logger(__name__)
 
 from settings import TRADING_DAYS
 
 
-def load_factor_df(codes: List[str], start_date: str, end_date: str) -> pd.DataFrame:
+def load_factor_df(codes: list[str], start_date: str, end_date: str) -> pd.DataFrame:
     """
     批量拉取因子数据，返回宽表 DataFrame。
 
@@ -24,11 +25,13 @@ def load_factor_df(codes: List[str], start_date: str, end_date: str) -> pd.DataF
     """
     # 信任边界：外部传入的 codes 可能无后缀，统一规范化为 DB 格式
     from utils.asset_type import to_ts_code
+
     codes = [to_ts_code(c) for c in codes]
     try:
-        from core.database import db_session
-        from models.quant_data import StockDailyFactor, StockDailyBar, StockFinancial
         from sqlalchemy import and_, func
+
+        from core.database import db_session
+        from models.quant_data import StockDailyBar, StockDailyFactor, StockFinancial
 
         records = {}
         with db_session() as db:
@@ -48,22 +51,27 @@ def load_factor_df(codes: List[str], start_date: str, end_date: str) -> pd.DataF
             )
             factor_rows = (
                 db.query(StockDailyFactor)
-                .join(subq, and_(
-                    StockDailyFactor.code == subq.c.code,
-                    StockDailyFactor.trade_date == subq.c.max_date,
-                ))
+                .join(
+                    subq,
+                    and_(
+                        StockDailyFactor.code == subq.c.code,
+                        StockDailyFactor.trade_date == subq.c.max_date,
+                    ),
+                )
                 .all()
             )
             for r in factor_rows:
                 records.setdefault(r.code, {})
-                records[r.code].update({
-                    "pe_ttm": r.pe_ttm,
-                    "pb": r.pb,
-                    "turnover_rate": r.turnover_rate,
-                    "total_mv": r.total_mv,
-                    "circ_mv": r.circ_mv,
-                    "dv_ttm": r.dv_ttm,
-                })
+                records[r.code].update(
+                    {
+                        "pe_ttm": r.pe_ttm,
+                        "pb": r.pb,
+                        "turnover_rate": r.turnover_rate,
+                        "total_mv": r.total_mv,
+                        "circ_mv": r.circ_mv,
+                        "dv_ttm": r.dv_ttm,
+                    }
+                )
 
             # ── 2. 动量 + 波动（StockDailyBar 批量，取最近 20 日）──
             bar_subq = (
@@ -93,8 +101,9 @@ def load_factor_df(codes: List[str], start_date: str, end_date: str) -> pd.DataF
                         returns_20 = np.diff(rev) / np.where(rev[:-1] != 0, rev[:-1], np.nan)
                         returns_20 = returns_20[~np.isnan(returns_20)]
                         records.setdefault(code, {})
-                        records[code]["momentum_20"] = float(closes_arr[0] / closes_arr[-1] - 1) \
-                            if closes_arr[-1] != 0 else 0.0
+                        records[code]["momentum_20"] = (
+                            float(closes_arr[0] / closes_arr[-1] - 1) if closes_arr[-1] != 0 else 0.0
+                        )
                         # reversal = 近期收益取反（A 股短期反转效应）
                         records[code]["reversal_20"] = -records[code]["momentum_20"]
                         vol_std = float(np.std(returns_20)) if len(returns_20) > 1 else 0.0
@@ -112,26 +121,32 @@ def load_factor_df(codes: List[str], start_date: str, end_date: str) -> pd.DataF
             )
             fin_rows = (
                 db.query(StockFinancial)
-                .join(fin_subq, and_(
-                    StockFinancial.code == fin_subq.c.code,
-                    StockFinancial.report_date == fin_subq.c.max_date,
-                ))
+                .join(
+                    fin_subq,
+                    and_(
+                        StockFinancial.code == fin_subq.c.code,
+                        StockFinancial.report_date == fin_subq.c.max_date,
+                    ),
+                )
                 .all()
             )
             for r in fin_rows:
                 records.setdefault(r.code, {})
-                records[r.code].update({
-                    "roe": r.roe,
-                    "gross_profit_margin": r.gross_profit_margin,
-                    "cashflow_oper": r.cashflow_oper if hasattr(r, "cashflow_oper") else None,
-                    "debt_to_assets": r.debt_to_assets if hasattr(r, "debt_to_assets") else None,
-                    "eps": r.eps if hasattr(r, "eps") else None,
-                    "revenue_growth": r.revenue_yoy if hasattr(r, "revenue_yoy") else None,
-                    "net_profit_growth": r.net_profit_yoy if hasattr(r, "net_profit_yoy") else None,
-                })
+                records[r.code].update(
+                    {
+                        "roe": r.roe,
+                        "gross_profit_margin": r.gross_profit_margin,
+                        "cashflow_oper": r.cashflow_oper if hasattr(r, "cashflow_oper") else None,
+                        "debt_to_assets": r.debt_to_assets if hasattr(r, "debt_to_assets") else None,
+                        "eps": r.eps if hasattr(r, "eps") else None,
+                        "revenue_growth": r.revenue_yoy if hasattr(r, "revenue_yoy") else None,
+                        "net_profit_growth": r.net_profit_yoy if hasattr(r, "net_profit_yoy") else None,
+                    }
+                )
 
             # ── 4. 筹码集中度（StockShareholderCount 最近两期变化率）──
             from models.quant_data import StockShareholderCount
+
             sh_rows = (
                 db.query(
                     StockShareholderCount.code,
@@ -155,6 +170,7 @@ def load_factor_df(codes: List[str], start_date: str, end_date: str) -> pd.DataF
 
             # ── 5. 融资融券 → margin_ratio ──
             from models.quant_data import StockMarginData
+
             margin_subq = (
                 db.query(
                     StockMarginData.code,
@@ -166,10 +182,13 @@ def load_factor_df(codes: List[str], start_date: str, end_date: str) -> pd.DataF
             )
             margin_rows = (
                 db.query(StockMarginData)
-                .join(margin_subq, and_(
-                    StockMarginData.code == margin_subq.c.code,
-                    StockMarginData.trade_date == margin_subq.c.max_date,
-                ))
+                .join(
+                    margin_subq,
+                    and_(
+                        StockMarginData.code == margin_subq.c.code,
+                        StockMarginData.trade_date == margin_subq.c.max_date,
+                    ),
+                )
                 .all()
             )
             for r in margin_rows:
@@ -183,11 +202,8 @@ def load_factor_df(codes: List[str], start_date: str, end_date: str) -> pd.DataF
 
             # ── 6. 行业归属 + 名称（StockBasicInfo）──
             from models.quant_data import StockBasicInfo as SBI
-            ind_rows = (
-                db.query(SBI.code, SBI.industry, SBI.name)
-                .filter(SBI.code.in_(codes))
-                .all()
-            )
+
+            ind_rows = db.query(SBI.code, SBI.industry, SBI.name).filter(SBI.code.in_(codes)).all()
             for r in ind_rows:
                 records.setdefault(r.code, {})
                 if r.industry:
@@ -221,16 +237,19 @@ def load_monthly_snapshots(
     """
     # 信任边界：外部传入的 codes 可能无后缀，统一规范化为 DB 格式
     from utils.asset_type import to_ts_code
+
     codes = [to_ts_code(c) for c in codes]
     try:
+        from sqlalchemy import and_, func
+
         from core.database import db_session
         from models.quant_data import StockDailyBar, StockDailyFactor, StockFinancial
-        from sqlalchemy import and_, func
 
         with db_session() as db:
             # ── 1. 获取月末日期列表（全局交易日，不依赖单只股票）──
             all_dates = [
-                r[0] for r in db.query(StockDailyBar.trade_date)
+                r[0]
+                for r in db.query(StockDailyBar.trade_date)
                 .filter(
                     StockDailyBar.trade_date >= start_date,
                     StockDailyBar.trade_date <= end_date,
@@ -244,12 +263,13 @@ def load_monthly_snapshots(
 
             # 取每月最后一个交易日
             from collections import defaultdict
+
             month_map = defaultdict(str)
             for d in all_dates:
                 ym = str(d)[:7]  # "2025-03"
                 month_map[ym] = str(d)  # 不断更新，最终保留月末
 
-            month_ends = sorted(month_map.values())[-periods - 1:]  # 多取1个用于 fwd_ret
+            month_ends = sorted(month_map.values())[-periods - 1 :]  # 多取1个用于 fwd_ret
             if len(month_ends) < 3:
                 return []
 
@@ -282,18 +302,24 @@ def load_monthly_snapshots(
             )
             factor_rows = (
                 db.query(StockDailyFactor)
-                .join(factor_subq, and_(
-                    StockDailyFactor.code == factor_subq.c.code,
-                    StockDailyFactor.trade_date == factor_subq.c.max_date,
-                ))
+                .join(
+                    factor_subq,
+                    and_(
+                        StockDailyFactor.code == factor_subq.c.code,
+                        StockDailyFactor.trade_date == factor_subq.c.max_date,
+                    ),
+                )
                 .all()
             )
             factor_map = {}
             for r in factor_rows:
                 factor_map[r.code] = {
-                    "pe_ttm": r.pe_ttm, "pb": r.pb,
-                    "turnover_rate": r.turnover_rate, "total_mv": r.total_mv,
-                    "circ_mv": r.circ_mv, "dv_ttm": r.dv_ttm,
+                    "pe_ttm": r.pe_ttm,
+                    "pb": r.pb,
+                    "turnover_rate": r.turnover_rate,
+                    "total_mv": r.total_mv,
+                    "circ_mv": r.circ_mv,
+                    "dv_ttm": r.dv_ttm,
                 }
 
             # ── 4. 批量拉取财务因子 ──
@@ -308,10 +334,13 @@ def load_monthly_snapshots(
             )
             fin_rows = (
                 db.query(StockFinancial)
-                .join(fin_subq, and_(
-                    StockFinancial.code == fin_subq.c.code,
-                    StockFinancial.report_date == fin_subq.c.max_date,
-                ))
+                .join(
+                    fin_subq,
+                    and_(
+                        StockFinancial.code == fin_subq.c.code,
+                        StockFinancial.report_date == fin_subq.c.max_date,
+                    ),
+                )
                 .all()
             )
             fin_map = {}
@@ -328,6 +357,7 @@ def load_monthly_snapshots(
 
             # ── 4b. 融资融券 → margin_ratio ──
             from models.quant_data import StockMarginData
+
             margin_subq = (
                 db.query(
                     StockMarginData.code,
@@ -339,10 +369,13 @@ def load_monthly_snapshots(
             )
             margin_rows = (
                 db.query(StockMarginData)
-                .join(margin_subq, and_(
-                    StockMarginData.code == margin_subq.c.code,
-                    StockMarginData.trade_date == margin_subq.c.max_date,
-                ))
+                .join(
+                    margin_subq,
+                    and_(
+                        StockMarginData.code == margin_subq.c.code,
+                        StockMarginData.trade_date == margin_subq.c.max_date,
+                    ),
+                )
                 .all()
             )
             for r in margin_rows:
@@ -377,7 +410,9 @@ def load_monthly_snapshots(
                         rev = closes_arr[::-1]
                         returns_20 = np.diff(rev) / np.where(rev[:-1] != 0, rev[:-1], np.nan)
                         returns_20 = returns_20[~np.isnan(returns_20)]
-                        volatility_map[code] = float(np.std(returns_20) * np.sqrt(TRADING_DAYS)) if len(returns_20) > 1 else 0.0
+                        volatility_map[code] = (
+                            float(np.std(returns_20) * np.sqrt(TRADING_DAYS)) if len(returns_20) > 1 else 0.0
+                        )
 
         # ── 6. 组装每期截面 ──
         snapshots = []
@@ -404,16 +439,21 @@ def load_monthly_snapshots(
                 records.append(entry)
 
             if len(records) >= 10:
-                snapshots.append({
-                    "period_date": t_date,
-                    "df": pd.DataFrame(records),
-                })
+                snapshots.append(
+                    {
+                        "period_date": t_date,
+                        "df": pd.DataFrame(records),
+                    }
+                )
 
-        log.info("monthly_snapshots_loaded", periods=len(snapshots),
-                 codes=len(codes), date_range=f"{month_ends[0]}~{month_ends[-1]}")
+        log.info(
+            "monthly_snapshots_loaded",
+            periods=len(snapshots),
+            codes=len(codes),
+            date_range=f"{month_ends[0]}~{month_ends[-1]}",
+        )
         return snapshots
 
     except Exception as e:
         log.warning(f"[FactorLoader] load_monthly_snapshots error: {e}")
         return []
-

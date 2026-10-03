@@ -3,25 +3,27 @@ Tushare major_news 抓取器
 
 市场级新闻，标题匹配关联股票由 Pipeline 统一处理。
 """
+
 import os
-import structlog
 from datetime import datetime, timedelta
-from typing import List, Dict
+
+import structlog
+
+from services.news.sentiment import strip_html
 
 from .base import BaseFetcher, RawNewsItem
-from services.news.sentiment import strip_html
 
 log = structlog.get_logger("fetcher.tushare")
 
 
 class TushareFetcher(BaseFetcher):
-
     source_name = "tushare"
 
-    def fetch(self, codes: List[str], names: Dict[str, str]) -> List[RawNewsItem]:
+    def fetch(self, codes: list[str], names: dict[str, str]) -> list[RawNewsItem]:
         items = []
         try:
             import tushare as ts
+
             token = os.getenv("TUSHARE_TOKEN")
             if not token:
                 return items
@@ -51,13 +53,15 @@ class TushareFetcher(BaseFetcher):
                 raw_content = str(row.get("content", "") or "")
                 clean_content = strip_html(raw_content)
 
-                items.append(RawNewsItem(
-                    title=title,
-                    summary=clean_content[:200],
-                    source=self.source_name,
-                    publish_time=_parse_time(row.get("pub_time")),
-                    raw_text=title + " " + clean_content[:200],
-                ))
+                items.append(
+                    RawNewsItem(
+                        title=title,
+                        summary=clean_content[:200],
+                        source=self.source_name,
+                        publish_time=_parse_time(row.get("pub_time")),
+                        raw_text=title + " " + clean_content[:200],
+                    )
+                )
 
             log.info("tushare_fetched", count=len(items))
         except ImportError:

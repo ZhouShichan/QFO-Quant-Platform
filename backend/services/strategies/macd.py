@@ -1,6 +1,7 @@
 """动量指标策略（MACD / RSI 双模式）"""
 
 import numpy as np
+
 from services.strategies.base import BaseStrategy, StrategyParam, ema
 
 
@@ -13,11 +14,16 @@ class MacdStrategy(BaseStrategy):
 
     def params_schema(self):
         return [
-            StrategyParam("mode", "指标模式", "select", "macd",
-                          options=[
-                              {"value": "macd", "label": "MACD金叉/死叉"},
-                              {"value": "rsi", "label": "RSI超买超卖"},
-                          ]),
+            StrategyParam(
+                "mode",
+                "指标模式",
+                "select",
+                "macd",
+                options=[
+                    {"value": "macd", "label": "MACD金叉/死叉"},
+                    {"value": "rsi", "label": "RSI超买超卖"},
+                ],
+            ),
             StrategyParam("fast", "MACD快线", "int", 12, min=5, max=30, step=1),
             StrategyParam("slow", "MACD慢线", "int", 26, min=15, max=60, step=1),
             StrategyParam("signal", "MACD信号线", "int", 9, min=3, max=20, step=1),

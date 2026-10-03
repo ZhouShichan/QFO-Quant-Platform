@@ -7,9 +7,9 @@
 """
 
 import time
-import structlog
+
 import pandas as pd
-from typing import Optional
+import structlog
 
 from core.database import db_session
 from jobs.sync_base import write_watermark
@@ -18,10 +18,13 @@ from utils.trade_date import resolve_end_date
 log = structlog.get_logger("sync_margin")
 
 
-def sync_margin(ts_source, start_date: Optional[str] = None,
-                end_date: Optional[str] = None,
-                force_refill: bool = False,
-                task_id: Optional[str] = None) -> dict:
+def sync_margin(
+    ts_source,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    force_refill: bool = False,
+    task_id: str | None = None,
+) -> dict:
     """
     同步融资融券明细。
 
@@ -72,8 +75,7 @@ def _sync_margin_day(ts_source, target_date: str) -> int:
         @tushare_module.with_tushare_retry(max_retries=2, delay=2.0)
         def _fetch():
             return ts_source.pro.margin_detail(
-                trade_date=target_date,
-                fields="ts_code,trade_date,rzye,rzmre,rqye,rzrqye"
+                trade_date=target_date, fields="ts_code,trade_date,rzye,rzmre,rqye,rzrqye"
             )
 
         df = _fetch()
@@ -81,9 +83,7 @@ def _sync_margin_day(ts_source, target_date: str) -> int:
             log.warning("margin_detail_empty", trade_date=target_date)
             return 0
 
-        tushare_module.validate_tushare_fields(
-            df, ["ts_code", "trade_date", "rzye"], api_name="margin_detail"
-        )
+        tushare_module.validate_tushare_fields(df, ["ts_code", "trade_date", "rzye"], api_name="margin_detail")
         return _upsert_margin(df)
 
     except Exception as e:
@@ -94,6 +94,7 @@ def _sync_margin_day(ts_source, target_date: str) -> int:
 def _sync_margin_range(ts_source, start: str, end: str) -> int:
     """force_refill：按交易日逐日拉取（单次 API 上限 6000 行 ≈ 4 个交易日）"""
     import time as _t
+
     trade_dates = _get_trade_dates(ts_source, start, end)
     total = 0
     for td in trade_dates:
@@ -110,12 +111,12 @@ def _get_db_max_next(table_name: str) -> str | None:
     以 DB 实际数据为唯一真相源。
     """
     from datetime import timedelta
+
     from sqlalchemy import text
+
     try:
         with db_session() as db:
-            r = db.execute(text(
-                f"SELECT MAX(trade_date) FROM {table_name}"
-            )).scalar()
+            r = db.execute(text(f"SELECT MAX(trade_date) FROM {table_name}")).scalar()
             if r:
                 max_date = pd.to_datetime(str(r))
                 next_day = max_date + timedelta(days=1)
@@ -128,11 +129,10 @@ def _get_db_max_next(table_name: str) -> str | None:
 def _get_db_max_date(table_name: str) -> str | None:
     """读取 DB 实际最大 trade_date，返回 YYYY-MM-DD 格式（写水位用）。"""
     from sqlalchemy import text
+
     try:
         with db_session() as db:
-            r = db.execute(text(
-                f"SELECT MAX(trade_date) FROM {table_name}"
-            )).scalar()
+            r = db.execute(text(f"SELECT MAX(trade_date) FROM {table_name}")).scalar()
             if r:
                 return str(r)[:10]  # Date or str → YYYY-MM-DD
     except Exception as e:
@@ -143,9 +143,7 @@ def _get_db_max_date(table_name: str) -> str | None:
 def _get_trade_dates(ts_source, start: str, end: str) -> list:
     """获取范围内的交易日列表"""
     try:
-        df = ts_source.pro.trade_cal(
-            start_date=start, end_date=end, is_open="1", fields="cal_date"
-        )
+        df = ts_source.pro.trade_cal(start_date=start, end_date=end, is_open="1", fields="cal_date")
         if df is not None and not df.empty:
             return sorted(df["cal_date"].astype(str).tolist())
     except Exception as e:
@@ -180,7 +178,8 @@ def _upsert_margin(df: pd.DataFrame) -> int:
                     except (ValueError, TypeError):
                         return None
 
-                db.execute(text("""
+                db.execute(
+                    text("""
                     INSERT INTO stock_margin_data (code, trade_date, rzye, rzmre, rqye, rzrqye)
                     VALUES (:code, :trade_date, :rzye, :rzmre, :rqye, :rzrqye)
                     ON CONFLICT(code, trade_date) DO UPDATE SET
@@ -188,14 +187,16 @@ def _upsert_margin(df: pd.DataFrame) -> int:
                         rzmre=excluded.rzmre,
                         rqye=excluded.rqye,
                         rzrqye=excluded.rzrqye
-                """), {
-                    "code": code,
-                    "trade_date": trade_date,
-                    "rzye": _safe_float(row.get("rzye")),
-                    "rzmre": _safe_float(row.get("rzmre")),
-                    "rqye": _safe_float(row.get("rqye")),
-                    "rzrqye": _safe_float(row.get("rzrqye")),
-                })
+                """),
+                    {
+                        "code": code,
+                        "trade_date": trade_date,
+                        "rzye": _safe_float(row.get("rzye")),
+                        "rzmre": _safe_float(row.get("rzmre")),
+                        "rqye": _safe_float(row.get("rqye")),
+                        "rzrqye": _safe_float(row.get("rzrqye")),
+                    },
+                )
                 written += 1
             except Exception as e:
                 log.debug("margin_row_skip", error=str(e))

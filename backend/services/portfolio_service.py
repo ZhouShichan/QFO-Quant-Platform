@@ -15,11 +15,10 @@
 import numpy as np
 import pandas as pd
 import structlog
-from typing import List, Dict, Optional
 
 log = structlog.get_logger(__name__)
 
-from settings import TRADING_DAYS, RF_ANNUAL
+from settings import RF_ANNUAL, TRADING_DAYS
 
 
 class PortfolioService:
@@ -27,11 +26,11 @@ class PortfolioService:
 
     def optimize(
         self,
-        codes: List[str],
+        codes: list[str],
         method: str = "max_sharpe",
         lookback_days: int = TRADING_DAYS,
-        expected_returns_override: Optional[Dict[str, float]] = None,
-    ) -> Dict:
+        expected_returns_override: dict[str, float] | None = None,
+    ) -> dict:
         """主入口：计算单种方法的组合最优权重。"""
         prep = self._prepare(codes, lookback_days, expected_returns_override)
         if "error" in prep:
@@ -40,10 +39,10 @@ class PortfolioService:
 
     def optimize_all(
         self,
-        codes: List[str],
+        codes: list[str],
         lookback_days: int = TRADING_DAYS,
-        expected_returns_override: Optional[Dict[str, float]] = None,
-    ) -> Dict:
+        expected_returns_override: dict[str, float] | None = None,
+    ) -> dict:
         """一次加载数据，计算全部 4 种优化方法。"""
         prep = self._prepare(codes, lookback_days, expected_returns_override)
         if "error" in prep:
@@ -59,10 +58,10 @@ class PortfolioService:
 
     def _prepare(
         self,
-        codes: List[str],
+        codes: list[str],
         lookback_days: int,
-        expected_returns_override: Optional[Dict[str, float]] = None,
-    ) -> Dict:
+        expected_returns_override: dict[str, float] | None = None,
+    ) -> dict:
         """公共数据加载 + 协方差计算（只做一次）。"""
         if not codes:
             return {"error": "请先添加股票到自选池"}
@@ -75,11 +74,17 @@ class PortfolioService:
         mu = self._expected_returns(returns_df, expected_returns_override)
         sigma = self._cov_matrix(returns_df)
         individual_stds = np.sqrt(np.diag(sigma))
-        return {"valid_codes": valid_codes, "n": n, "mu": mu, "sigma": sigma,
-                "individual_stds": individual_stds, "lookback_days": lookback_days,
-                "actual_data_points": actual_data_points}
+        return {
+            "valid_codes": valid_codes,
+            "n": n,
+            "mu": mu,
+            "sigma": sigma,
+            "individual_stds": individual_stds,
+            "lookback_days": lookback_days,
+            "actual_data_points": actual_data_points,
+        }
 
-    def _build_result(self, prep: Dict, method: str) -> Dict:
+    def _build_result(self, prep: dict, method: str) -> dict:
         """用预计算数据 + 优化方法生成结果。"""
         valid_codes, n = prep["valid_codes"], prep["n"]
         mu, sigma = prep["mu"], prep["sigma"]
@@ -99,17 +104,21 @@ class PortfolioService:
 
         holdings = []
         for i, code in enumerate(valid_codes):
-            holdings.append({
-                "code": code, "name": code,
-                "weight": float(weights[i]),
-                "expectedReturn": float(mu[i] * TRADING_DAYS),
-                "risk": float(individual_stds[i] * np.sqrt(TRADING_DAYS)),
-                "raw_metrics": {},
-            })
+            holdings.append(
+                {
+                    "code": code,
+                    "name": code,
+                    "weight": float(weights[i]),
+                    "expectedReturn": float(mu[i] * TRADING_DAYS),
+                    "risk": float(individual_stds[i] * np.sqrt(TRADING_DAYS)),
+                    "raw_metrics": {},
+                }
+            )
         holdings.sort(key=lambda h: h["weight"], reverse=True)
 
         return {
-            "method": method, "codes": valid_codes,
+            "method": method,
+            "codes": valid_codes,
             "expectedReturn": float(port_return * TRADING_DAYS),
             "portfolioRisk": float(port_risk * np.sqrt(TRADING_DAYS)),
             "sharpeRatio": float(sharpe),
@@ -121,27 +130,30 @@ class PortfolioService:
 
     # ── 数据加载 ──────────────────────────────────────────────────────────
 
-    def _load_returns(self, codes: List[str], lookback_days: int) -> pd.DataFrame:
+    def _load_returns(self, codes: list[str], lookback_days: int) -> pd.DataFrame:
         """从本地日线表批量读取最近 N 天收益率（自动路由 Stock/ETF/可转债）"""
         try:
+            from sqlalchemy import desc
+
             from core.database import db_session
             from utils.bar_query import get_bar_model, to_db_code
-            from sqlalchemy import desc
 
             with db_session() as db:
                 all_data = {}
                 for code in codes:
                     BarModel = get_bar_model(code)
                     db_code = to_db_code(code)
-                    rows = (db.query(BarModel.trade_date, BarModel.close)
-                            .filter(BarModel.code == db_code)
-                            .order_by(desc(BarModel.trade_date))
-                            .limit(lookback_days + 1)
-                            .all())
+                    rows = (
+                        db.query(BarModel.trade_date, BarModel.close)
+                        .filter(BarModel.code == db_code)
+                        .order_by(desc(BarModel.trade_date))
+                        .limit(lookback_days + 1)
+                        .all()
+                    )
                     if len(rows) >= 10:
                         closes = np.array([r.close for r in reversed(rows)], dtype=float)
                         returns = np.diff(closes) / closes[:-1]
-                        clean_code = code.split('.')[0]
+                        clean_code = code.split(".")[0]
                         all_data[clean_code] = returns
 
             if not all_data:
@@ -163,7 +175,7 @@ class PortfolioService:
     @staticmethod
     def _expected_returns(
         returns_df: pd.DataFrame,
-        override: Optional[Dict[str, float]] = None,
+        override: dict[str, float] | None = None,
     ) -> np.ndarray:
         """
         历史均值收益率（日频）。
@@ -186,6 +198,7 @@ class PortfolioService:
         """
         try:
             from sklearn.covariance import LedoitWolf
+
             lw = LedoitWolf()
             lw.fit(returns_df.values)
             return lw.covariance_
@@ -194,10 +207,7 @@ class PortfolioService:
 
     # ── 优化方法 ──────────────────────────────────────────────────────────
 
-    def _optimize(
-        self, mu: np.ndarray, sigma: np.ndarray,
-        method: str, n: int
-    ) -> np.ndarray:
+    def _optimize(self, mu: np.ndarray, sigma: np.ndarray, method: str, n: int) -> np.ndarray:
         """分发到各优化方法"""
         if method == "max_sharpe":
             return self._max_sharpe(mu, sigma, n)
@@ -224,9 +234,14 @@ class PortfolioService:
             bounds = [(0.01, 0.30)] * n  # 单只 1%~30%
             w0 = np.ones(n) / n
 
-            result = minimize(neg_sharpe, w0, method="SLSQP",
-                              bounds=bounds, constraints=constraints,
-                              options={"maxiter": 500, "ftol": 1e-9})
+            result = minimize(
+                neg_sharpe,
+                w0,
+                method="SLSQP",
+                bounds=bounds,
+                constraints=constraints,
+                options={"maxiter": 500, "ftol": 1e-9},
+            )
             if result.success:
                 w = np.maximum(result.x, 0)
                 return w / w.sum()
@@ -243,7 +258,7 @@ class PortfolioService:
 
             def risk_contrib_diff(w):
                 port_var = np.dot(w, np.dot(sigma, w))
-                mrc = np.dot(sigma, w)           # 边际风险贡献
+                mrc = np.dot(sigma, w)  # 边际风险贡献
                 rc = w * mrc / (np.sqrt(port_var) + 1e-9)  # 风险贡献
                 target = np.full(n, 1.0 / n)
                 return np.sum((rc - target) ** 2)
@@ -252,9 +267,14 @@ class PortfolioService:
             bounds = [(0.005, 0.5)] * n
             w0 = np.ones(n) / n
 
-            result = minimize(risk_contrib_diff, w0, method="SLSQP",
-                              bounds=bounds, constraints=constraints,
-                              options={"maxiter": 1000, "ftol": 1e-12})
+            result = minimize(
+                risk_contrib_diff,
+                w0,
+                method="SLSQP",
+                bounds=bounds,
+                constraints=constraints,
+                options={"maxiter": 1000, "ftol": 1e-12},
+            )
             if result.success:
                 w = np.maximum(result.x, 0)
                 return w / w.sum()
@@ -276,9 +296,9 @@ class PortfolioService:
             bounds = [(0.01, 0.30)] * n
             w0 = np.ones(n) / n
 
-            result = minimize(port_variance, w0, method="SLSQP",
-                              bounds=bounds, constraints=constraints,
-                              options={"maxiter": 500})
+            result = minimize(
+                port_variance, w0, method="SLSQP", bounds=bounds, constraints=constraints, options={"maxiter": 500}
+            )
             if result.success:
                 w = np.maximum(result.x, 0)
                 return w / w.sum()
@@ -287,18 +307,19 @@ class PortfolioService:
         except Exception as e:
             log.warning("min_variance_failed", error=str(e))
         return np.ones(n) / n
+
     # ── 再平衡模拟 ────────────────────────────────────────────────────────
 
     def rebalance_simulation(
         self,
-        codes: List[str],
+        codes: list[str],
         method: str = "max_sharpe",
         period: str = "monthly",
         lookback_days: int = TRADING_DAYS,
         commission_rate: float = 0.001,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-    ) -> Dict:
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict:
         """模拟定期再平衡，返回净值序列和统计指标"""
         from core.database import db_session
         from utils.bar_query import get_bar_model, to_db_code
@@ -312,22 +333,22 @@ class PortfolioService:
                 BarModel = get_bar_model(code)
                 db_code = to_db_code(code)
 
-                q = (db.query(BarModel.trade_date, BarModel.close)
-                     .filter(BarModel.code == db_code))
+                q = db.query(BarModel.trade_date, BarModel.close).filter(BarModel.code == db_code)
                 if start_date:
                     from datetime import datetime, timedelta
-                    pre_start = (datetime.strptime(start_date, "%Y-%m-%d")
-                                 - timedelta(days=int(lookback_days * 1.5))).strftime("%Y-%m-%d")
+
+                    pre_start = (
+                        datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=int(lookback_days * 1.5))
+                    ).strftime("%Y-%m-%d")
                     q = q.filter(BarModel.trade_date >= pre_start)
                 if end_date:
                     q = q.filter(BarModel.trade_date <= end_date)
                 rows = q.order_by(BarModel.trade_date).all()
 
                 if len(rows) >= 60:
-                    clean = code.split('.')[0]
+                    clean = code.split(".")[0]
                     price_dict[clean] = pd.Series(
-                        [r.close for r in rows],
-                        index=pd.to_datetime([r.trade_date for r in rows])
+                        [r.close for r in rows], index=pd.to_datetime([r.trade_date for r in rows])
                     )
 
         if len(price_dict) < 2:
@@ -392,15 +413,15 @@ class PortfolioService:
 
                 cost = turnover * commission_rate * 2
                 total_cost += cost
-                net_value *= (1 - cost)
+                net_value *= 1 - cost
                 current_weights = new_weights
 
             port_ret = np.dot(current_weights, day_ret)
-            net_value *= (1 + port_ret)
+            net_value *= 1 + port_ret
             net_values.append(round(net_value, 6))
 
             eq_ret = np.dot(eq_weights, day_ret)
-            benchmark_nv *= (1 + eq_ret)
+            benchmark_nv *= 1 + eq_ret
             benchmark_values.append(round(benchmark_nv, 6))
 
             drifted = current_weights * (1 + day_ret)
@@ -417,4 +438,3 @@ class PortfolioService:
             "method": method,
             "period": period,
         }
-

@@ -5,9 +5,10 @@
 """
 
 import time
-import structlog
-import pandas as pd
 from datetime import datetime
+
+import pandas as pd
+import structlog
 
 from core.database import db_session
 from jobs.sync_base import write_watermark
@@ -21,8 +22,10 @@ log = structlog.get_logger("sync_sentiment")
 #  每个函数有独立水位，skip 间隔由 data_sync_service 控制
 # ================================================================
 
-def sync_moneyflow_only(ts_source, sent_writer, codes: list,
-                        start_date: str, end_date: str, force_refill: bool = False):
+
+def sync_moneyflow_only(
+    ts_source, sent_writer, codes: list, start_date: str, end_date: str, force_refill: bool = False
+):
     """仅同步资金流向（每日更新）"""
     t0 = time.time()
     rows = _sync_moneyflow(ts_source, sent_writer, codes, start_date, end_date, force_refill)
@@ -31,10 +34,9 @@ def sync_moneyflow_only(ts_source, sent_writer, codes: list,
         # 用 DB 实际最大日期写水位（非请求 end_date），避免数据未就绪时水位虚高
         try:
             from sqlalchemy import text as _text
+
             with db_session() as _db:
-                _r = _db.execute(_text(
-                    "SELECT MAX(trade_date) FROM stock_money_flow"
-                )).fetchone()
+                _r = _db.execute(_text("SELECT MAX(trade_date) FROM stock_money_flow")).fetchone()
                 actual_max = str(_r[0]).replace("-", "")[:8] if _r and _r[0] else end_date
         except Exception:
             actual_max = end_date
@@ -44,8 +46,6 @@ def sync_moneyflow_only(ts_source, sent_writer, codes: list,
     return {"rows": rows}
 
 
-
-
 def sync_shareholder_only(ts_source, sent_writer, codes: list, force_refill: bool = False):
     """仅同步股东户数（季度更新）"""
     t0 = time.time()
@@ -53,13 +53,14 @@ def sync_shareholder_only(ts_source, sent_writer, codes: list, force_refill: boo
     write_watermark("shareholder", "any", None, t0, "success")
 
 
-def _sync_moneyflow(ts_source, sent_writer, codes: list, start_date: str, end_date: str,
-                    force_refill: bool = False):
+def _sync_moneyflow(ts_source, sent_writer, codes: list, start_date: str, end_date: str, force_refill: bool = False):
     """同步资金流向"""
     import data_sources.tushare_source as tushare_module
+
     target_set = set(codes)
 
     try:
+
         @tushare_module.with_tushare_retry(max_retries=2, delay=1.0)
         def _fetch_cal():
             return ts_source.pro.trade_cal(
@@ -67,6 +68,7 @@ def _sync_moneyflow(ts_source, sent_writer, codes: list, start_date: str, end_da
                 end_date=end_date.replace("-", ""),
                 is_open="1",
             )
+
         df_cal = _fetch_cal()
         if df_cal is not None and not df_cal.empty:
             all_dates = sorted(df_cal["cal_date"].tolist())
@@ -77,21 +79,26 @@ def _sync_moneyflow(ts_source, sent_writer, codes: list, start_date: str, end_da
         trade_dates = [end_date.replace("-", "")]
 
     total = len(trade_dates)
-    log.info("moneyflow_dates_to_sync", count=total, force_refill=force_refill,
-             first=trade_dates[0] if trade_dates else None,
-             last=trade_dates[-1] if trade_dates else None)
+    log.info(
+        "moneyflow_dates_to_sync",
+        count=total,
+        force_refill=force_refill,
+        first=trade_dates[0] if trade_dates else None,
+        last=trade_dates[-1] if trade_dates else None,
+    )
 
     inserted_rows = 0
     consecutive_empty = 0
     from settings import TUSHARE_BREAKER_FAIL_THRESHOLD
-    BAIL_THRESHOLD = TUSHARE_BREAKER_FAIL_THRESHOLD
-    day_idx = 0
 
-    for day_idx, td in enumerate(trade_dates):
+    BAIL_THRESHOLD = TUSHARE_BREAKER_FAIL_THRESHOLD
+
+    for _day_idx, td in enumerate(trade_dates):
         try:
+
             @tushare_module.with_tushare_retry(max_retries=1, delay=1.0)
             def _fetch_mf():
-                return ts_source.pro.moneyflow(trade_date=td)
+                return ts_source.pro.moneyflow(trade_date=td)  # noqa: B023  # 闭包引用循环变量 td，本次迭代内立即调用，行为符合预期
 
             df_mf = _fetch_mf()
             if df_mf is not None and not df_mf.empty:
@@ -99,15 +106,18 @@ def _sync_moneyflow(ts_source, sent_writer, codes: list, start_date: str, end_da
                 trade_date_obj = pd.to_datetime(td, format="%Y%m%d").date()
                 with db_session() as db:
                     n = sent_writer.upsert_moneyflow_batch(db, df_mf, trade_date_obj, target_set)
-                    inserted_rows += (n or len(df_mf))
+                    inserted_rows += n or len(df_mf)
             else:
                 consecutive_empty += 1
                 log.debug("moneyflow_empty_day", trade_date=td, consecutive=consecutive_empty)
                 if consecutive_empty >= BAIL_THRESHOLD:
-                    log.warning("moneyflow_bail_out",
-                                reason="连续空数据，疑似积分不足",
-                                consecutive=consecutive_empty,
-                                last_date=td, inserted_so_far=inserted_rows)
+                    log.warning(
+                        "moneyflow_bail_out",
+                        reason="连续空数据，疑似积分不足",
+                        consecutive=consecutive_empty,
+                        last_date=td,
+                        inserted_so_far=inserted_rows,
+                    )
                     break
             time.sleep(MONEYFLOW_SLEEP)
         except Exception as e:
@@ -118,18 +128,17 @@ def _sync_moneyflow(ts_source, sent_writer, codes: list, start_date: str, end_da
             log.warning("moneyflow_fetch_failed", trade_date=td, error=err)
             time.sleep(MONEYFLOW_SLEEP)
 
-    log.info("moneyflow_sync_done", inserted=inserted_rows, dates=total,
-             processed=day_idx + 1 if trade_dates else 0)
+    log.info("moneyflow_sync_done", inserted=inserted_rows, dates=total, processed=_day_idx + 1 if trade_dates else 0)
     return inserted_rows
-
-
 
 
 def _sync_shareholder_counts(ts_source, sent_writer, codes: list, force_refill: bool = False):
     """同步股东户数（增量策略：只拉最近 30 天内未更新的股票，force_refill 时全量）"""
+    from datetime import timedelta
+
     import data_sources.tushare_source as tushare_module
     from models.quant_data import StockShareholderCount
-    from datetime import timedelta
+
     success = 0
 
     # 增量：查询已有最新更新日期，跳过近 30 天内已更新的
@@ -138,11 +147,16 @@ def _sync_shareholder_counts(ts_source, sent_writer, codes: list, force_refill: 
         cutoff = (datetime.now() - timedelta(days=30)).date()
         try:
             from sqlalchemy import func as sqlfunc
+
             with db_session() as db:
-                rows = db.query(
-                    StockShareholderCount.code,
-                    sqlfunc.max(StockShareholderCount.end_date),
-                ).group_by(StockShareholderCount.code).all()
+                rows = (
+                    db.query(
+                        StockShareholderCount.code,
+                        sqlfunc.max(StockShareholderCount.end_date),
+                    )
+                    .group_by(StockShareholderCount.code)
+                    .all()
+                )
                 for code, last_date in rows:
                     if last_date and last_date >= cutoff:
                         skip_codes.add(code)
@@ -150,14 +164,14 @@ def _sync_shareholder_counts(ts_source, sent_writer, codes: list, force_refill: 
             pass  # 查询失败则全量拉取
 
     need_sync = [c for c in codes if c not in skip_codes]
-    log.info("shareholder_incremental",
-             total=len(codes), skip=len(skip_codes), need_sync=len(need_sync))
+    log.info("shareholder_incremental", total=len(codes), skip=len(skip_codes), need_sync=len(need_sync))
 
     for code in need_sync:
         try:
+
             @tushare_module.with_tushare_retry(max_retries=1, delay=1.0)
             def _fetch_holder():
-                return ts_source.pro.stk_holdernumber(ts_code=code)
+                return ts_source.pro.stk_holdernumber(ts_code=code)  # noqa: B023  # 闭包引用循环变量 code，本次迭代内立即调用，行为符合预期
 
             df = _fetch_holder()
             if df is not None and not df.empty:
@@ -177,12 +191,14 @@ def _sync_shareholder_counts(ts_source, sent_writer, codes: list, force_refill: 
                         prev_num = holder_nums[idx + 1]
                         if prev_num > 0:
                             change_rate = (holder_num - prev_num) / prev_num * 100
-                    records.append({
-                        "code": code,
-                        "end_date": end_date_parsed.date(),
-                        "holder_num": holder_num,
-                        "holder_num_change_rate": round(change_rate, 2),
-                    })
+                    records.append(
+                        {
+                            "code": code,
+                            "end_date": end_date_parsed.date(),
+                            "holder_num": holder_num,
+                            "holder_num_change_rate": round(change_rate, 2),
+                        }
+                    )
                 if records:
                     with db_session() as db:
                         sent_writer.upsert_shareholder_batch(db, records)
@@ -197,4 +213,3 @@ def _sync_shareholder_counts(ts_source, sent_writer, codes: list, force_refill: 
             continue
 
     log.info("shareholder_sync_done", success=success)
-

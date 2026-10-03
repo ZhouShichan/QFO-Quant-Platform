@@ -4,14 +4,14 @@
 按 event_type 聚合历史事件，计算 T+N 收益率和胜率，
 验证 NLP 事件分类是否具有预测价值。
 """
+
 import json
 from datetime import timedelta
-from typing import Optional, List
 
 import structlog
 
 from core.database import db_session
-from models.quant_data import StockNews, StockDailyBar
+from models.quant_data import StockDailyBar, StockNews
 
 log = structlog.get_logger("event_backtest")
 
@@ -23,11 +23,11 @@ _EXCLUDE_EVENTS = {"其他"}
 
 
 def extract_event_signals(
-    event_type: Optional[str] = None,
+    event_type: str | None = None,
     min_score: float = 0.3,
-    codes_filter: Optional[List[str]] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    codes_filter: list[str] | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> list:
     """
     提取去重后的事件信号列表（L1 统计 + L3 策略共用）。
@@ -53,14 +53,17 @@ def extract_event_signals(
             query = query.filter(StockNews.publish_time >= start_date)
         if end_date:
             query = query.filter(StockNews.publish_time <= end_date + " 23:59:59")
-        news_rows = [{
-            "event_type": r.event_type,
-            "sentiment_score": r.sentiment_score,
-            "related_codes": r.related_codes,
-            "publish_time": r.publish_time,
-            "title": r.title,
-            "url": r.url,
-        } for r in query.all()]
+        news_rows = [
+            {
+                "event_type": r.event_type,
+                "sentiment_score": r.sentiment_score,
+                "related_codes": r.related_codes,
+                "publish_time": r.publish_time,
+                "title": r.title,
+                "url": r.url,
+            }
+            for r in query.all()
+        ]
 
     codes_set = set(codes_filter) if codes_filter else None
     dedup = {}
@@ -80,18 +83,21 @@ def extract_event_signals(
         key = (code, pub_date.isoformat(), row["event_type"])
         if key not in dedup or abs(score) > abs(dedup[key]["score"]):
             dedup[key] = {
-                "code": code, "pub_date": pub_date,
-                "event": row["event_type"], "score": score,
-                "title": row["title"], "url": row["url"],
+                "code": code,
+                "pub_date": pub_date,
+                "event": row["event_type"],
+                "score": score,
+                "title": row["title"],
+                "url": row["url"],
             }
 
     return list(dedup.values())
 
 
 def analyze_events(
-    event_type: Optional[str] = None,
+    event_type: str | None = None,
     min_score: float = 0.3,
-    periods: Optional[list] = None,
+    periods: list | None = None,
 ) -> dict:
     """
     统计事件发生后 T+N 天的收益表现。
@@ -118,13 +124,16 @@ def analyze_events(
         min_date = min(all_dates)
         max_date = max(all_dates) + timedelta(days=max_period + 5)
         with db_session() as db:
-            bars = db.query(
-                StockDailyBar.code, StockDailyBar.trade_date, StockDailyBar.close
-            ).filter(
-                StockDailyBar.code.in_(list(code_set)),
-                StockDailyBar.trade_date >= min_date,
-                StockDailyBar.trade_date <= max_date,
-            ).order_by(StockDailyBar.code, StockDailyBar.trade_date).all()
+            bars = (
+                db.query(StockDailyBar.code, StockDailyBar.trade_date, StockDailyBar.close)
+                .filter(
+                    StockDailyBar.code.in_(list(code_set)),
+                    StockDailyBar.trade_date >= min_date,
+                    StockDailyBar.trade_date <= max_date,
+                )
+                .order_by(StockDailyBar.code, StockDailyBar.trade_date)
+                .all()
+            )
         for bar in bars:
             price_cache.setdefault(bar.code, []).append((bar.trade_date, bar.close))
 
@@ -146,15 +155,17 @@ def analyze_events(
         if not returns:
             continue
 
-        details.append({
-            "date": pub_date.strftime("%Y-%m-%d"),
-            "code": code,
-            "event": item["event"],
-            "score": round(item["score"], 2),
-            "title": item["title"],
-            "url": item["url"],
-            **returns,
-        })
+        details.append(
+            {
+                "date": pub_date.strftime("%Y-%m-%d"),
+                "code": code,
+                "event": item["event"],
+                "score": round(item["score"], 2),
+                "title": item["title"],
+                "url": item["url"],
+                **returns,
+            }
+        )
 
     summary = _aggregate(details, periods)
     log.info("event_backtest_done", events=len(details), types=len(summary))

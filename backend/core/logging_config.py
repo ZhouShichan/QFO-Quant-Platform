@@ -3,7 +3,9 @@
 ========
 统一 structlog 渲染格式。在 main.py 启动时调用 setup_logging()。
 """
+
 import sys
+
 import structlog
 
 
@@ -27,9 +29,7 @@ def setup_logging(log_level: str = "INFO"):
                 pad_event=30,
             ),
         ],
-        wrapper_class=structlog.make_filtering_bound_logger(
-            getattr(__import__("logging"), "getLevelName")(log_level.upper())
-        ),
+        wrapper_class=structlog.make_filtering_bound_logger(__import__("logging").getLevelName(log_level.upper())),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,

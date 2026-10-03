@@ -5,11 +5,12 @@
 频率：半年调整一次，90 天内同步过则跳过
 策略：增量覆盖——按行业替换，保留已有的其他行业
 """
-import structlog
+
 import time
-import pandas as pd
 from datetime import datetime
-from typing import Optional
+
+import pandas as pd
+import structlog
 
 from core.database import db_session
 from models.quant_data import SwIndustry, SyncWatermark
@@ -19,9 +20,9 @@ log = structlog.get_logger(__name__)
 SKIP_INTERVAL_DAYS = 90  # 水位间隔：90 天内同步过则跳过
 
 
-def sync_sw_industry(task_id: Optional[str] = None):
-    from data_sources.tushare_source import TushareSource
+def sync_sw_industry(task_id: str | None = None):
     import data_sources.tushare_source as tushare_module
+    from data_sources.tushare_source import TushareSource
 
     # ── 水位检查：90 天内同步过则跳过 ──
     try:
@@ -33,8 +34,12 @@ def sync_sw_industry(task_id: Optional[str] = None):
                     # 额外检查：行业数是否已满
                     ind_count = db.query(SwIndustry.sw_l1_name).distinct().count()
                     if ind_count >= 31:
-                        log.info("sync_sw_industry_skipped", days_since=days_since,
-                                 industries=ind_count, next_in=f"{SKIP_INTERVAL_DAYS - days_since}天")
+                        log.info(
+                            "sync_sw_industry_skipped",
+                            days_since=days_since,
+                            industries=ind_count,
+                            next_in=f"{SKIP_INTERVAL_DAYS - days_since}天",
+                        )
                         return {"status": "skipped", "message": f"90天内已同步过({days_since}天前), {ind_count}/31行业"}
     except Exception as e:
         log.debug("sw_watermark_check_error", error=str(e))
@@ -47,7 +52,7 @@ def sync_sw_industry(task_id: Optional[str] = None):
 
     @tushare_module.with_tushare_retry(max_retries=2, delay=1.0)
     def _fetch_classify():
-        return ts.pro.index_classify(level='L1', src='SW2021')
+        return ts.pro.index_classify(level="L1", src="SW2021")
 
     df_cls = _fetch_classify()
     if df_cls is None or df_cls.empty:
@@ -69,7 +74,7 @@ def sync_sw_industry(task_id: Optional[str] = None):
             continue
 
         pct = round((idx / total) * 100)
-        _report(task_id, pct, f"拉取 {l1_name} ({idx+1}/{total})...")
+        _report(task_id, pct, f"拉取 {l1_name} ({idx + 1}/{total})...")
 
         @tushare_module.with_tushare_retry(max_retries=2, delay=1.0)
         def _fetch_members(code=l1_code):
@@ -78,6 +83,7 @@ def sync_sw_industry(task_id: Optional[str] = None):
         try:
             df_mem = _fetch_members()
             from settings import SW_INDUSTRY_SLEEP
+
             time.sleep(SW_INDUSTRY_SLEEP)
         except Exception as e:
             err_str = str(e)
@@ -100,18 +106,25 @@ def sync_sw_industry(task_id: Optional[str] = None):
             out_date = m.get("out_date", None)
             if pd.notna(out_date) and str(out_date).strip():
                 continue
-            all_records.append({
-                "code": stock_code,
-                "sw_l1_code": l1_code,
-                "sw_l1_name": l1_name,
-                "in_date": str(m.get("in_date", "")) if pd.notna(m.get("in_date")) else None,
-                "out_date": None,
-            })
+            all_records.append(
+                {
+                    "code": stock_code,
+                    "sw_l1_code": l1_code,
+                    "sw_l1_name": l1_name,
+                    "in_date": str(m.get("in_date", "")) if pd.notna(m.get("in_date")) else None,
+                    "out_date": None,
+                }
+            )
             batch += 1
 
         success_count += 1
-        log.info("sync_sw_industry_progress", l1=l1_name, kept=batch,
-                 total_so_far=len(all_records), progress=f"{success_count}/{total}")
+        log.info(
+            "sync_sw_industry_progress",
+            l1=l1_name,
+            kept=batch,
+            total_so_far=len(all_records),
+            progress=f"{success_count}/{total}",
+        )
 
     # ── Step 3: 去重 + 增量写入 ──
     if not all_records:
@@ -131,10 +144,8 @@ def sync_sw_industry(task_id: Optional[str] = None):
                 unique_records.append(r)
 
         # 增量覆盖：只替换本次拉取的行业
-        fetched_industries = set(r["sw_l1_code"] for r in unique_records)
-        db.query(SwIndustry).filter(
-            SwIndustry.sw_l1_code.in_(fetched_industries)
-        ).delete(synchronize_session=False)
+        fetched_industries = {r["sw_l1_code"] for r in unique_records}
+        db.query(SwIndustry).filter(SwIndustry.sw_l1_code.in_(fetched_industries)).delete(synchronize_session=False)
         db.bulk_insert_mappings(SwIndustry, unique_records)
         total_industries = db.query(SwIndustry.sw_l1_name).distinct().count()
 
@@ -147,8 +158,12 @@ def sync_sw_industry(task_id: Optional[str] = None):
         msg += "（IP限制，再次同步可补全）"
 
     _report(task_id, 100, f"✅ 申万行业: {msg}")
-    log.info("sync_sw_industry_done", total=len(unique_records),
-             industries_this=success_count, industries_total=total_industries)
+    log.info(
+        "sync_sw_industry_done",
+        total=len(unique_records),
+        industries_this=success_count,
+        industries_total=total_industries,
+    )
     return {
         "status": "partial" if total_industries < 31 else "ok",
         "total_stocks": len(unique_records),
@@ -164,9 +179,15 @@ def _report(task_id, pct, message):
         return
     try:
         from utils.task_store import task_store
-        task_store.update_task(task_id, "running", result={
-            "progress": pct, "message": message,
-        })
+
+        task_store.update_task(
+            task_id,
+            "running",
+            result={
+                "progress": pct,
+                "message": message,
+            },
+        )
     except Exception:
         pass
 
@@ -180,11 +201,13 @@ def _write_watermark():
                 wm.last_sync_date = datetime.now().date()
                 wm.status = "success"
             else:
-                db.add(SyncWatermark(
-                    data_type="sw_industry",
-                    mode="any",
-                    last_sync_date=datetime.now().date(),
-                    status="success",
-                ))
+                db.add(
+                    SyncWatermark(
+                        data_type="sw_industry",
+                        mode="any",
+                        last_sync_date=datetime.now().date(),
+                        status="success",
+                    )
+                )
     except Exception as e:
         log.warning("sw_watermark_write_error", error=str(e))

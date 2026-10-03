@@ -10,12 +10,11 @@ Tushare Pro 为主力，若 Tushare 接口返回空或异常，自动触发此�
 """
 
 import structlog
-from typing import Optional, List, Dict
 
 log = structlog.get_logger(__name__)
 
 
-def get_cb_premium_list() -> List[Dict]:
+def get_cb_premium_list() -> list[dict]:
     """
     获取全市场可转债溢价率快照（当日最新数据）。
     返回字段: code, name, close, premium_ratio, pure_bond_value,
@@ -25,6 +24,7 @@ def get_cb_premium_list() -> List[Dict]:
     """
     try:
         import akshare as ak
+
         df = ak.bond_zh_cov()
         if df is None or df.empty:
             log.warning("akshare_cb_premium_empty")
@@ -32,19 +32,35 @@ def get_cb_premium_list() -> List[Dict]:
 
         # 列名映射（集中管理在 schema.py）
         from data_sources.schema import get_column_map
+
         col_map = get_column_map("akshare_cb_premium")
         rename = {k: v for k, v in col_map.items() if k in df.columns}
         df = df.rename(columns=rename)
 
         results = []
-        numeric_cols = {"close", "premium_ratio", "convert_value",
-                        "convert_price", "underlying_close", "remaining_size"}
+        numeric_cols = {
+            "close",
+            "premium_ratio",
+            "convert_value",
+            "convert_price",
+            "underlying_close",
+            "remaining_size",
+        }
         for _, row in df.iterrows():
             record = {}
-            for col in ["code", "name", "close", "premium_ratio",
-                         "convert_value", "convert_price",
-                         "remaining_size", "rating",
-                         "underlying_code", "underlying_name", "underlying_close"]:
+            for col in [
+                "code",
+                "name",
+                "close",
+                "premium_ratio",
+                "convert_value",
+                "convert_price",
+                "remaining_size",
+                "rating",
+                "underlying_code",
+                "underlying_name",
+                "underlying_close",
+            ]:
                 val = row.get(col)
                 try:
                     record[col] = float(val) if col in numeric_cols and val is not None else val
@@ -58,7 +74,8 @@ def get_cb_premium_list() -> List[Dict]:
 
         log.info("akshare_cb_premium_fetched", count=len(results))
 
-        from data_sources.schema import validate_records, SCHEMA
+        from data_sources.schema import SCHEMA, validate_records
+
         validate_records(results, SCHEMA["ak_cb_premium"], source="AkShare bond_zh_cov")
         return results
 
@@ -67,7 +84,7 @@ def get_cb_premium_list() -> List[Dict]:
         return []
 
 
-def get_cb_comparison(bond_code: str) -> Optional[Dict]:
+def get_cb_comparison(bond_code: str) -> dict | None:
     """
     获取单只可转债与正股的价格联动数据。
     返回: {"underlying_close": float, "premium_ratio": float, ...}
@@ -75,6 +92,7 @@ def get_cb_comparison(bond_code: str) -> Optional[Dict]:
     """
     try:
         import akshare as ak
+
         df = ak.bond_cov_comparison(bond=bond_code)
         if df is None or df.empty:
             return None

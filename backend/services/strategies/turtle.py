@@ -1,6 +1,7 @@
 """海龟交易策略"""
 
 import numpy as np
+
 from services.strategies.base import BaseStrategy, StrategyParam
 
 
@@ -25,8 +26,8 @@ class TurtleStrategy(BaseStrategy):
         signals = np.zeros((T, N))
 
         for t in range(entry, T):
-            high_n = np.nanmax(prices[t - entry:t], axis=0)
-            low_m = np.nanmin(prices[max(0, t - exit_n):t], axis=0)
+            high_n = np.nanmax(prices[t - entry : t], axis=0)
+            low_m = np.nanmin(prices[max(0, t - exit_n) : t], axis=0)
             signals[t][prices[t] > high_n] = 1
             signals[t][prices[t] < low_m] = -1
         return signals

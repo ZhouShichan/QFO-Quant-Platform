@@ -3,10 +3,11 @@ Tavily Search 抓取器
 
 唯一一份 Tavily 逻辑，同时支持 fetch（自动降级）和 search（用户搜索）。
 """
+
 import os
-import structlog
 from datetime import datetime
-from typing import List, Dict
+
+import structlog
 
 from .base import BaseFetcher, RawNewsItem
 from .tushare import _parse_time
@@ -18,19 +19,28 @@ from settings import TAVILY_NEWS_DOMAINS as _NEWS_DOMAINS
 
 # ── 二级防线：漏网之鱼的垃圾过滤 ──
 _JUNK_TITLE_KW = [
-    "最新价格", "行情走势", "走势图", "实时行情", "个股资讯",
-    "公司概括", "Company Profile", "股票消息和頭條",
-    "F10", "f10", "动态_", "Technical Analysis",
-    "RT Quote", "Detailed Quote", "股息历史",
+    "最新价格",
+    "行情走势",
+    "走势图",
+    "实时行情",
+    "个股资讯",
+    "公司概括",
+    "Company Profile",
+    "股票消息和頭條",
+    "F10",
+    "f10",
+    "动态_",
+    "Technical Analysis",
+    "RT Quote",
+    "Detailed Quote",
+    "股息历史",
 ]
 
 # 最大新闻年龄（天）
 _MAX_AGE_DAYS = 7
 
 
-
 class TavilyFetcher(BaseFetcher):
-
     source_name = "tavily"
 
     def __init__(self):
@@ -40,7 +50,7 @@ class TavilyFetcher(BaseFetcher):
     def available(self) -> bool:
         return bool(self._api_key)
 
-    def fetch(self, codes: List[str], names: Dict[str, str]) -> List[RawNewsItem]:
+    def fetch(self, codes: list[str], names: dict[str, str]) -> list[RawNewsItem]:
         """自动抓取模式：按股票名称构建搜索词"""
         if not self.available:
             return []
@@ -62,7 +72,7 @@ class TavilyFetcher(BaseFetcher):
         log.info("tavily_fetched", count=len(items))
         return items
 
-    def search(self, keyword: str) -> List[RawNewsItem]:
+    def search(self, keyword: str) -> list[RawNewsItem]:
         """用户主动搜索模式"""
         if not self.available:
             return []
@@ -71,10 +81,11 @@ class TavilyFetcher(BaseFetcher):
         log.info("tavily_searched", keyword=keyword, count=len(items))
         return items
 
-    def _do_search(self, query: str, *, hint_code: str = "", max_results: int = 5) -> List[RawNewsItem]:
+    def _do_search(self, query: str, *, hint_code: str = "", max_results: int = 5) -> list[RawNewsItem]:
         """核心搜索逻辑（只写一次）"""
-        import requests
         import time
+
+        import requests
 
         try:
             resp = requests.post(
@@ -109,29 +120,28 @@ class TavilyFetcher(BaseFetcher):
                 # 二级防线：标题关键词 + JSON 检测
                 if any(kw in title for kw in _JUNK_TITLE_KW):
                     continue
-                if '[[' in title or ']]' in title:
+                if "[[" in title or "]]" in title:
                     continue
                 # 垃圾标题过滤（乱码检测已统一到 pipeline._process）
 
                 # 提取真实发布时间
-                pub_time = (
-                    _parse_time(r.get("published_date"))
-                    or _parse_time(r.get("publishedDate"))
-                )
+                pub_time = _parse_time(r.get("published_date")) or _parse_time(r.get("publishedDate"))
                 # 过滤超龄旧文
                 if pub_time and (datetime.now() - pub_time).days > _MAX_AGE_DAYS:
                     continue
 
-                items.append(RawNewsItem(
-                    title=title,
-                    summary=r.get("content", "")[:200],
-                    source=self.source_name,
-                    url=url,
-                    publish_time=pub_time,
-                    market_type="A股" if hint_code else "全球",
-                    hint_code=hint_code,
-                    raw_text=title + " " + r.get("content", "")[:100],
-                ))
+                items.append(
+                    RawNewsItem(
+                        title=title,
+                        summary=r.get("content", "")[:200],
+                        source=self.source_name,
+                        url=url,
+                        publish_time=pub_time,
+                        market_type="A股" if hint_code else "全球",
+                        hint_code=hint_code,
+                        raw_text=title + " " + r.get("content", "")[:100],
+                    )
+                )
             return items
         except RuntimeError:
             raise  # API 错误向上传播，前端能看到

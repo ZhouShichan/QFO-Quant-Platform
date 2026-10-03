@@ -4,13 +4,15 @@
 验证 schema 验证规则和列名映射配置正确性。
 运行: python -m pytest tests/test_schema.py -v
 """
-import pytest
-from data_sources.schema import validate_records, SCHEMA, COLUMN_MAP, get_column_map
 
+import pytest
+
+from data_sources.schema import COLUMN_MAP, SCHEMA, get_column_map, validate_records
 
 # ══════════════════════════════════════════════════
 #  Schema 验证测试
 # ══════════════════════════════════════════════════
+
 
 class TestSchemaValidation:
     """验证 validate_records 的校验逻辑"""
@@ -22,10 +24,8 @@ class TestSchemaValidation:
 
     def test_good_data_passes(self):
         records = [
-            {"code": "113050", "name": "南银转债",
-             "convert_price": 12.5, "rating": "AA", "underlying_code": "601009"},
-            {"code": "127039", "name": "润建转债",
-             "convert_price": 20.0, "rating": "AA-", "underlying_code": "002929"},
+            {"code": "113050", "name": "南银转债", "convert_price": 12.5, "rating": "AA", "underlying_code": "601009"},
+            {"code": "127039", "name": "润建转债", "convert_price": 20.0, "rating": "AA-", "underlying_code": "002929"},
         ]
         result = validate_records(records, SCHEMA["cb_basic"], source="test")
         assert result["ok"] is True
@@ -40,14 +40,12 @@ class TestSchemaValidation:
     def test_missing_required_raises_when_asked(self):
         records = [{"name": "南银转债"}]
         with pytest.raises(ValueError):
-            validate_records(records, SCHEMA["cb_basic"],
-                             source="test", raise_on_fail=True)
+            validate_records(records, SCHEMA["cb_basic"], source="test", raise_on_fail=True)
 
     def test_all_null_important_fails(self):
         """模拟之前的 bug：API 返回了行但关键字段全是 NULL"""
         records = [
-            {"code": f"11{i:04d}", "name": "X",
-             "convert_price": None, "rating": None, "underlying_code": None}
+            {"code": f"11{i:04d}", "name": "X", "convert_price": None, "rating": None, "underlying_code": None}
             for i in range(10)
         ]
         result = validate_records(records, SCHEMA["cb_basic"], source="test")
@@ -57,9 +55,13 @@ class TestSchemaValidation:
     def test_partial_null_within_threshold(self):
         """50% 以内的 NULL 不报警（亏损股无 PE 是正常的）"""
         records = [
-            {"code": f"6001{i:02d}.SH", "trade_date": "20260319",
-             "pe_ttm": 15.0 if i % 2 == 0 else None,
-             "pb": 1.5, "turnover_rate": 2.0}
+            {
+                "code": f"6001{i:02d}.SH",
+                "trade_date": "20260319",
+                "pe_ttm": 15.0 if i % 2 == 0 else None,
+                "pb": 1.5,
+                "turnover_rate": 2.0,
+            }
             for i in range(10)
         ]
         result = validate_records(records, SCHEMA["stock_factor"], source="test")
@@ -70,6 +72,7 @@ class TestSchemaValidation:
 # ══════════════════════════════════════════════════
 #  列名映射测试
 # ══════════════════════════════════════════════════
+
 
 class TestColumnMap:
     """验证 COLUMN_MAP 配置的完整性和正确性"""
@@ -109,6 +112,7 @@ class TestColumnMap:
 # ══════════════════════════════════════════════════
 #  Schema 定义完整性测试
 # ══════════════════════════════════════════════════
+
 
 class TestSchemaDefinitions:
     """确保 SCHEMA 定义本身是合理的"""

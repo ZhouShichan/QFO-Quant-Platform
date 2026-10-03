@@ -17,11 +17,10 @@
 
 import numpy as np
 import structlog
-from typing import List, Dict, Optional, Tuple
 
 log = structlog.get_logger(__name__)
 
-from settings import TRADING_DAYS, RF_ANNUAL
+from settings import RF_ANNUAL, TRADING_DAYS
 
 
 class RiskService:
@@ -31,12 +30,12 @@ class RiskService:
 
     def analyze(
         self,
-        portfolio_returns: List[float],
-        benchmark_returns: Optional[List[float]] = None,
-        net_values: Optional[List[float]] = None,
-        dates: Optional[List[str]] = None,
+        portfolio_returns: list[float],
+        benchmark_returns: list[float] | None = None,
+        net_values: list[float] | None = None,
+        dates: list[str] | None = None,
         confidence: float = 0.95,
-    ) -> Dict:
+    ) -> dict:
         """
         全量风险分析。
 
@@ -100,7 +99,7 @@ class RiskService:
 
         # ── Beta / Alpha / Tracking Error（需要基准）──
         if benchmark_returns is not None and len(benchmark_returns) >= len(r):
-            b = np.array(benchmark_returns[:len(r)], dtype=float)
+            b = np.array(benchmark_returns[: len(r)], dtype=float)
             b = b[~np.isnan(b)]
             min_len = min(len(r), len(b))
             rp, rb = r[-min_len:], b[-min_len:]
@@ -109,9 +108,7 @@ class RiskService:
             result["alpha"] = float(self._alpha(rp, rb, result["beta"]) * 100)
             te = float(np.std(rp - rb) * np.sqrt(TRADING_DAYS) * 100)
             result["tracking_error"] = te
-            result["information_ratio"] = float(
-                (np.mean(rp - rb) * TRADING_DAYS * 100) / te if te > 0 else 0.0
-            )
+            result["information_ratio"] = float((np.mean(rp - rb) * TRADING_DAYS * 100) / te if te > 0 else 0.0)
         else:
             result["beta"] = None
             result["alpha"] = None
@@ -122,33 +119,36 @@ class RiskService:
         rf = RF_ANNUAL / TRADING_DAYS  # 无风险日收益
         excess = r - rf
         sharpe_denom = np.std(excess) * np.sqrt(TRADING_DAYS)
-        result["sharpe_ratio"] = float(
-            np.mean(excess) * TRADING_DAYS / sharpe_denom if sharpe_denom > 0 else 0.0
-        )
+        result["sharpe_ratio"] = float(np.mean(excess) * TRADING_DAYS / sharpe_denom if sharpe_denom > 0 else 0.0)
 
         log.info("risk_analysis_done", metrics=list(result.keys()))
         return result
 
-    def get_benchmark_returns(self, start_date: str, end_date: str) -> List[float]:
+    def get_benchmark_returns(self, start_date: str, end_date: str) -> list[float]:
         """
         获取沪深300基准日收益率序列。
         降级链：本地 EtfDailyBar(510300.SH) → Tushare index_daily → AkShare
         """
         # ── 优先：本地 ETF 日线（510300.SH = 沪深300ETF）──
         try:
-            from core.database import db_session
-            from models.quant_data import EtfDailyBar
             from sqlalchemy import and_
 
+            from core.database import db_session
+            from models.quant_data import EtfDailyBar
+
             with db_session() as db:
-                rows = (db.query(EtfDailyBar.trade_date, EtfDailyBar.close)
-                        .filter(and_(
+                rows = (
+                    db.query(EtfDailyBar.trade_date, EtfDailyBar.close)
+                    .filter(
+                        and_(
                             EtfDailyBar.code == "510300.SH",
                             EtfDailyBar.trade_date >= start_date,
                             EtfDailyBar.trade_date <= end_date,
-                        ))
-                        .order_by(EtfDailyBar.trade_date.asc())
-                        .all())
+                        )
+                    )
+                    .order_by(EtfDailyBar.trade_date.asc())
+                    .all()
+                )
                 if rows:
                     closes = np.array([r.close for r in rows], dtype=float)
                     returns = np.diff(closes) / closes[:-1]
@@ -159,17 +159,18 @@ class RiskService:
         except Exception as e:
             log.warning("benchmark_local_failed", error=str(e))
 
-
         # ── 降级1：Tushare Pro index_daily（稳定，3000积分即可）──
         try:
+            import os
+
+            import tushare as ts
             from dotenv import load_dotenv
-            import os, tushare as ts
+
             load_dotenv()
             pro = ts.pro_api(os.getenv("TUSHARE_TOKEN", ""))
             s = start_date.replace("-", "")
             e = end_date.replace("-", "")
-            df = pro.index_daily(ts_code="000300.SH", start_date=s, end_date=e,
-                                 fields="trade_date,close")
+            df = pro.index_daily(ts_code="000300.SH", start_date=s, end_date=e, fields="trade_date,close")
             if df is not None and not df.empty:
                 df = df.sort_values("trade_date")
                 closes = df["close"].values.astype(float)
@@ -184,9 +185,13 @@ class RiskService:
         # ── 降级2：AkShare（网络不稳定时可能断开）──
         try:
             import akshare as ak
-            df = ak.index_zh_a_hist(symbol="000300", period="daily",
-                                    start_date=start_date.replace("-", ""),
-                                    end_date=end_date.replace("-", ""))
+
+            df = ak.index_zh_a_hist(
+                symbol="000300",
+                period="daily",
+                start_date=start_date.replace("-", ""),
+                end_date=end_date.replace("-", ""),
+            )
             if df is not None and not df.empty:
                 closes = df["收盘"].values.astype(float)
                 returns = np.diff(closes) / closes[:-1]
@@ -197,7 +202,6 @@ class RiskService:
             log.warning("benchmark_akshare_failed", error=str(e))
 
         return []
-
 
     # ── 私有计算方法 ──────────────────────────────────────────────────────
 
@@ -214,10 +218,7 @@ class RiskService:
         return float(-np.mean(tail)) if len(tail) > 0 else 0.0
 
     @staticmethod
-    def _max_drawdown(
-        net_values: np.ndarray,
-        dates: Optional[List[str]] = None
-    ) -> Tuple[float, Optional[str], Optional[str]]:
+    def _max_drawdown(net_values: np.ndarray, dates: list[str] | None = None) -> tuple[float, str | None, str | None]:
         """最大回撤及发生区间"""
         peak = np.maximum.accumulate(net_values)
         drawdown = (net_values - peak) / peak
@@ -226,7 +227,7 @@ class RiskService:
             # 无回撤（净值单调上升或全等）
             return 0.0, None, None
         idx_end = int(np.argmin(drawdown))
-        idx_start = int(np.argmax(net_values[:idx_end + 1])) if idx_end > 0 else 0
+        idx_start = int(np.argmax(net_values[: idx_end + 1])) if idx_end > 0 else 0
         start_date = dates[idx_start] if dates and idx_start < len(dates) else None
         end_date = dates[idx_end] if dates and idx_end < len(dates) else None
         return max_dd, start_date, end_date
@@ -234,9 +235,9 @@ class RiskService:
     @staticmethod
     def _drawdown_periods(
         net_values: np.ndarray,
-        dates: Optional[List[str]] = None,
+        dates: list[str] | None = None,
         top_n: int = 3,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         识别 Top N 回撤区间（从高点到低点）
         """
@@ -254,28 +255,32 @@ class RiskService:
                 start_i = i
             elif in_drawdown and dd[i] >= -1e-9:
                 # 回撤结束
-                trough_i = start_i + int(np.argmin(dd[start_i:i + 1]))
+                trough_i = start_i + int(np.argmin(dd[start_i : i + 1]))
                 magnitude = float(-dd[trough_i])
-                periods.append({
-                    "start": dates[start_i] if dates else str(start_i),
-                    "trough": dates[trough_i] if dates else str(trough_i),
-                    "end": dates[i] if dates else str(i),
-                    "drawdown": round(magnitude * 100, 2),  # 百分比
-                    "duration_days": i - start_i,
-                })
+                periods.append(
+                    {
+                        "start": dates[start_i] if dates else str(start_i),
+                        "trough": dates[trough_i] if dates else str(trough_i),
+                        "end": dates[i] if dates else str(i),
+                        "drawdown": round(magnitude * 100, 2),  # 百分比
+                        "duration_days": i - start_i,
+                    }
+                )
                 in_drawdown = False
 
         # 如果还在回撤中
         if in_drawdown and start_i < len(nv):
             trough_i = start_i + int(np.argmin(dd[start_i:]))
             magnitude = float(-dd[trough_i])
-            periods.append({
-                "start": dates[start_i] if dates else str(start_i),
-                "trough": dates[trough_i] if dates else str(trough_i),
-                "end": None,
-                "drawdown": round(magnitude * 100, 2),
-                "duration_days": len(nv) - start_i,
-            })
+            periods.append(
+                {
+                    "start": dates[start_i] if dates else str(start_i),
+                    "trough": dates[trough_i] if dates else str(trough_i),
+                    "end": None,
+                    "drawdown": round(magnitude * 100, 2),
+                    "duration_days": len(nv) - start_i,
+                }
+            )
 
         # 按回撤幅度排序，取 Top N
         periods.sort(key=lambda x: x["drawdown"], reverse=True)
