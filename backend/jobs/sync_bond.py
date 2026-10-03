@@ -574,7 +574,7 @@ def sync_bond_factor(trade_date: str | None = None, task_id: str | None = None):
                 uc = f"{uc}.SH" if uc[:2] in ("60", "68") else f"{uc}.SZ"
                 underlying_codes.add(uc)
 
-        underlying_data = {}  # { code: (close, pe, roe) }
+        underlying_data: dict[str, tuple[float | None, float | None, float | None]] = {}  # { code: (close, pe, roe) }
         if underlying_codes:
             from sqlalchemy import func as sqlfunc
 

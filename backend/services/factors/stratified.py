@@ -13,6 +13,8 @@
     result = stratified_backtest(factor_panel, return_panel, n_groups=5)
 """
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import structlog
@@ -65,7 +67,7 @@ def stratified_backtest(
         return {"error": f"调仓期数不足: {len(rb_dates)}"}
 
     # ── 逐期分组（相邻调仓日之间的持仓收益） ──
-    group_returns = {g: [] for g in range(1, n_groups + 1)}
+    group_returns: dict[int, list[float]] = {g: [] for g in range(1, n_groups + 1)}
     ic_values = []
     valid_dates = []
 
@@ -115,7 +117,7 @@ def stratified_backtest(
         return {"error": f"有效截面不足: {len(valid_dates)}"}
 
     # ── 组装结果 ──
-    groups = []
+    groups: list[dict[str, Any]] = []
     for g in range(1, n_groups + 1):
         rets = np.array(group_returns[g])
         cum = _cum_returns(rets)
@@ -159,7 +161,7 @@ def stratified_backtest(
     }
 
     # 单调性评分
-    group_annuals = [g["annual_return"] for g in groups]
+    group_annuals: list[float] = [g["annual_return"] for g in groups]
     mono = _monotonicity_score(group_annuals)
 
     # 综合判定

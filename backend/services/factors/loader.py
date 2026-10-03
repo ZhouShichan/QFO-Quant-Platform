@@ -6,6 +6,7 @@
 """
 
 from collections import defaultdict
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -33,7 +34,7 @@ def load_factor_df(codes: list[str], start_date: str, end_date: str) -> pd.DataF
         from core.database import db_session
         from models.quant_data import StockDailyBar, StockDailyFactor, StockFinancial
 
-        records = {}
+        records: dict[str, dict[str, Any]] = {}
         with db_session() as db:
             # ── 1. 估值因子（StockDailyFactor 最新截面）──
             subq = (

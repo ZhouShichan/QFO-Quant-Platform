@@ -33,7 +33,7 @@ dev = [
     "ruff>=0.4.0",
     "pytest-cov>=5.0.0",
     "pre-commit>=4.0.0",
-    # mypy>=1.10.0  # 待 QFO 代码完成类型注解后启用，同步取消下方 [tool.mypy] 段注释
+    "mypy>=1.10.0",
 ]
 
 [tool.uv]
@@ -80,13 +80,18 @@ ignore = [
     "E712",  # SQLAlchemy 列比较 `== True` 惯用法，改写 .is_(True) 有 NULL 语义差异风险
 ]
 
-# 类型检查：待代码完成类型注解后取消注释并启用 dev 组中的 mypy
-# [tool.mypy]
-# python_version = "3.12"
-# strict = true
-# exclude = ["venv", ".venv", "scripts", "tests"]
-#
-# [[tool.mypy.overrides]]
-# 数据源库无类型存根
-# module = ["akshare.*", "tushare.*", "baostock.*"]
-# ignore_missing_imports = true
+# 类型检查基线：已修复存量错误使 mypy 通过；strict 模式待全量函数注解完成后渐进启用
+[tool.mypy]
+python_version = "3.12"
+# 未注解的函数体内也执行类型检查（strict 的前置台阶）
+check_untyped_defs = true
+# 防止无源的 type: ignore 长期潜伏
+warn_unused_ignores = true
+# 扁平模块布局（main.py + core/ + ...），无顶层包名，需显式以当前目录为包基
+explicit_package_bases = true
+exclude = ["venv", ".venv", "htmlcov", "scripts", "tests"]
+
+[[tool.mypy.overrides]]
+# 以下第三方库无类型存根
+module = ["akshare.*", "tushare.*", "baostock.*", "pandas.*", "scipy.*", "sklearn.*"]
+ignore_missing_imports = true

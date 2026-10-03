@@ -33,7 +33,12 @@ class DataValidator:
         return is_non_trade_date(date_str)
 
     @classmethod
-    def detect_price_jump(cls, df: pd.DataFrame, code: str = "", threshold: float = None) -> list[dict[str, Any]]:
+    def detect_price_jump(
+        cls,
+        df: pd.DataFrame,
+        code: str = "",
+        threshold: float | None = None,
+    ) -> list[dict[str, Any]]:
         """
         检测行情跳变（涨跌幅超过阈值）
 

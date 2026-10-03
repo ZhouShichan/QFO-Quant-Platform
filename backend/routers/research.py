@@ -4,6 +4,8 @@
 串联 panel_loader → expression → stratified，提供研究 API。
 """
 
+from typing import cast
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -42,6 +44,7 @@ async def list_presets():
 
     result = []
     for name, cfg in PRESET_FACTORS.items():
+        cfg = cast(dict, cfg)
         result.append(
             {
                 "name": name,

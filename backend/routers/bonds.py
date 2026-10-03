@@ -36,9 +36,9 @@ def get_factor_snapshot(
         try:
             # 取最新快照日期
             if trade_date:
-                from datetime import datetime
+                from datetime import date, datetime
 
-                latest_dt = datetime.strptime(trade_date, "%Y-%m-%d").date()
+                latest_dt: date | None = datetime.strptime(trade_date, "%Y-%m-%d").date()
             else:
                 from datetime import date as _d
 

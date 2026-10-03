@@ -10,6 +10,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 import requests
 import structlog
@@ -274,7 +275,7 @@ def send_feishu(content: str, cfg: dict | None = None) -> bool:
 
     try:
         # 飞书文本消息不渲染 Markdown，必须使用 interactive + lark_md 卡片
-        payload = {
+        payload: dict[str, Any] = {
             "msg_type": "interactive",
             "card": {
                 "config": {"wide_screen_mode": True},
@@ -325,6 +326,7 @@ def send_webhook(content: str, cfg: dict | None = None) -> bool:
     try:
         # 钉钉 URL 自动识别，使用 Markdown 格式（DSA 验证经验）
         url_lower = url.lower()
+        payload: dict[str, Any]
         if "dingtalk" in url_lower or "oapi.dingtalk.com" in url_lower:
             payload = {
                 "msgtype": "markdown",

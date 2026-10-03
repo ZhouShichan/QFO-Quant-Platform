@@ -13,7 +13,7 @@ log = structlog.get_logger("stock_pool")
 # 静态股票池 —— 仅保留 pool（自定义）作为 custom_codes 的接收容器
 # 宽基指数（hs300/zz500/zz1000）通过 Tushare index_weight 动态拉取
 # 全市场（all）通过查询本地 StockBasicInfo 表
-_STATIC_POOLS = {
+_STATIC_POOLS: dict[str, list[str]] = {
     "pool": [],  # 占位，实际使用 custom_codes 参数
 }
 
@@ -145,7 +145,7 @@ class StockPoolResolver:
         return _STATIC_POOLS["pool"]
 
     @staticmethod
-    def invalidate_cache(mode: str = None):
+    def invalidate_cache(mode: str | None = None):
         """
         主动使缓存失效。
         mode=None 时清除所有宽基缓存（用于指数成分调整后强制重拉）。

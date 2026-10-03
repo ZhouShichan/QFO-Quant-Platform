@@ -7,6 +7,7 @@
 
 import time
 import traceback
+from typing import cast
 
 import pandas as pd
 import structlog
@@ -142,7 +143,7 @@ class DataSyncService:
                     _effective_start = db_next  # 修正：从实际数据断点继续
                 elif not coverage_ok:
                     # 最新日期覆盖率不足（pool 残留） → 从该日重新同步
-                    _effective_start = db_max
+                    _effective_start = cast(str, db_max)
                     log.warning(
                         "coverage_resync",
                         resync_from=_effective_start,
@@ -175,10 +176,10 @@ class DataSyncService:
             # 增量检测（force_refill 时跳过，直接全量从 _effective_start 拉）
             if force_refill:
                 # 强制补历史：所有 code 从 _effective_start 开始，不做增量优化
-                inc_starts = dict.fromkeys(target_codes, _effective_start)
-                max_dates = {}
+                inc_starts: dict[str, str | None] = dict.fromkeys(target_codes, _effective_start)
+                max_dates: dict[str, str] = {}
                 need_sync = list(target_codes)
-                truly_skipped = []
+                truly_skipped: list[str] = []
                 batch_start = _effective_start
                 log.info("force_refill_skip_incremental_check", codes=len(need_sync), from_date=_effective_start)
             else:
@@ -759,7 +760,7 @@ class DataSyncService:
 
         return sync_index_weight(self._ts)
 
-    def _sync_margin(self, start_date: str = None, end_date: str = None, force_refill: bool = False):
+    def _sync_margin(self, start_date: str | None = None, end_date: str | None = None, force_refill: bool = False):
         from jobs.sync_margin import sync_margin
 
         return sync_margin(self._ts, start_date, end_date, force_refill)
@@ -906,14 +907,19 @@ class DataSyncService:
         return self._should_skip("shareholder", mode, min_interval_hours=168)
 
     @staticmethod
-    def _report(task_id: str, current: int, total: int, message: str, extra: dict = None):
+    def _report(task_id: str, current: int, total: int, message: str, extra: dict | None = None):
         from jobs.sync_base import report_progress
 
         report_progress(task_id, current, total, message, extra)
 
     @staticmethod
     def _write_watermark(
-        data_type: str, mode: str, last_sync_date: str, t_start: float, status: str, error_msg: str = None
+        data_type: str,
+        mode: str,
+        last_sync_date: str | None,
+        t_start: float,
+        status: str,
+        error_msg: str | None = None,
     ):
         from jobs.sync_base import write_watermark
 
@@ -921,19 +927,23 @@ class DataSyncService:
 
     # ── 可转债同步（委托给 sync_bond 模块）──
 
-    def sync_bond_basic(self, task_id: str = None):
+    def sync_bond_basic(self, task_id: str | None = None):
         from jobs.sync_bond import sync_bond_basic
 
         sync_bond_basic(task_id=task_id)
 
     def sync_bond_history(
-        self, start_date: str = None, end_date: str = None, task_id: str = None, force_refill: bool = False
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        task_id: str | None = None,
+        force_refill: bool = False,
     ):
         from jobs.sync_bond import sync_bond_history
 
         sync_bond_history(start_date=start_date, end_date=end_date, task_id=task_id, force_refill=force_refill)
 
-    def sync_bond_factor(self, trade_date: str = None, task_id: str = None):
+    def sync_bond_factor(self, trade_date: str | None = None, task_id: str | None = None):
         from jobs.sync_bond import sync_bond_factor
 
         sync_bond_factor(trade_date=trade_date, task_id=task_id)

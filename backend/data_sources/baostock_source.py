@@ -25,7 +25,7 @@ class BaostockSource(DataSourceBase):
     requires_token = False
 
     # 类变量单例状态：保证同进程内只登录一次
-    _bs_module = None
+    _bs_module: Any = None  # baostock 模块（无类型存根，Any）
     _logged_in = False
     _class_lock = threading.Lock()
 

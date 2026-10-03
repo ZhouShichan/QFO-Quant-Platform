@@ -44,7 +44,7 @@ class BaseStrategy(ABC):
         """返回该策略的可配参数列表"""
 
     @abstractmethod
-    def generate_signals(self, prices: np.ndarray, params: dict, volume: np.ndarray = None) -> np.ndarray:
+    def generate_signals(self, prices: np.ndarray, params: dict, volume: np.ndarray | None = None) -> np.ndarray:
         """
         输入 (T, N) 收盘价矩阵，输出 (T, N) 信号矩阵。
         +1=买入  -1=卖出  0=持有不变

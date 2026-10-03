@@ -74,7 +74,7 @@ TAVILY_NEWS_DOMAINS = [
     "xueqiu.com",
 ]
 BACKTEST_RESULT_RETAIN_DAYS = int(_env("BACKTEST_RESULT_RETAIN_DAYS", "90"))  # 回测结果保留天数
-SUMMARY_PUSH_HOURS = []  # telegram每日摘要推送时间（24h），如 [8, 18] 表示早8晚6各推一次
+SUMMARY_PUSH_HOURS: list[int] = []  # telegram每日摘要推送时间（24h），如 [8, 18] 表示早8晚6各推一次
 
 # ══════════════════ 运行时配置 ══════════════════
 

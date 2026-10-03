@@ -54,8 +54,8 @@ class SyncScheduler:
 
         # Phase B: 未覆盖的 fallback
         remaining = [c for c in need_sync if c not in batch_synced]
-        failed_codes = []
-        no_trade_codes = []
+        failed_codes: list[str] = []
+        no_trade_codes: list[str] = []
 
         if remaining:
             failed_codes, no_trade_codes = self._fallback_phase(
@@ -296,9 +296,10 @@ class SyncScheduler:
 
         # Baostock fallback：仅在 API 故障时尝试，停牌（正常返回空）不触发
         if (df_bars is None or (hasattr(df_bars, "empty") and df_bars.empty)) and _bars_api_error:
-            if _resolve_bs():
+            bs_src = _resolve_bs()
+            if bs_src is not None:
                 try:
-                    df_bars = bs_source.get_stock_history(short_code, start_date, end_date)
+                    df_bars = bs_src.get_stock_history(short_code, start_date, end_date)
                 except Exception as e:
                     log.warning("baostock_bars_failed", code=short_code, error=str(e))
 
@@ -330,7 +331,7 @@ class SyncScheduler:
 
         # Baostock 因子 fallback：仅在 API 故障时尝试
         if (df_factors is None or (hasattr(df_factors, "empty") and df_factors.empty)) and _factors_api_error:
-            if _resolve_bs():
+            if _resolve_bs() is not None:
                 try:
                     import baostock as bs
 

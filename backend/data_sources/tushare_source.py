@@ -203,7 +203,7 @@ class TushareSource(DataSourceBase):
     }
     _unavailable_apis: set = set()  # 缓存已确认不可用的接口，避免反复尝试
 
-    def __init__(self, token: str = None):
+    def __init__(self, token: str | None = None):
         import tushare as ts
 
         self.ts = ts
@@ -215,8 +215,7 @@ class TushareSource(DataSourceBase):
             self.pro = ts.pro_api()
         else:
             self.pro = None
-
-        self._stock_list_cache = None
+        self._stock_list_cache: list[StockInfo] | None = None
 
     def _check_token(self) -> bool:
         """检查 Token 是否有效"""
@@ -626,7 +625,7 @@ class TushareSource(DataSourceBase):
             log.warning("cb_basic_error", error=str(e))
             return []
 
-    def get_cb_daily(self, trade_date: str = None) -> list[dict]:
+    def get_cb_daily(self, trade_date: str | None = None) -> list[dict]:
         """
         获取指定交易日的可转债行情（收盘价/成交量/剩余规模等）。
         接口: pro.cb_daily()，需要 ≥2000 积分
@@ -760,7 +759,12 @@ class TushareSource(DataSourceBase):
     }
 
     @with_tushare_retry(max_retries=2)
-    def get_industry_index_daily(self, trade_date: str = None, start_date: str = None, end_date: str = None) -> list:
+    def get_industry_index_daily(
+        self,
+        trade_date: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> list:
         """
         拉取申万一级行业指数日线数据。
         trade_date: 单日  start_date/end_date: 日期范围

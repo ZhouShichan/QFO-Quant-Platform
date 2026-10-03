@@ -5,7 +5,7 @@
 """
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import structlog
@@ -446,7 +446,7 @@ async def get_backtest_detail(result_id: int, db: Session = Depends(get_db)):
     result = None
     if row.result_json:
         try:
-            result = json.loads(row.result_json)
+            result = json.loads(cast(str, row.result_json))
         except (json.JSONDecodeError, TypeError):
             pass
     if result is None and row.result_data:
@@ -455,14 +455,14 @@ async def get_backtest_detail(result_id: int, db: Session = Depends(get_db)):
     codes = []
     if row.codes:
         try:
-            codes = json.loads(row.codes)
+            codes = json.loads(cast(str, row.codes))
         except (json.JSONDecodeError, TypeError):
             pass
 
     universe_config = None
     if row.universe_config:
         try:
-            universe_config = json.loads(row.universe_config)
+            universe_config = json.loads(cast(str, row.universe_config))
         except (json.JSONDecodeError, TypeError):
             pass
 

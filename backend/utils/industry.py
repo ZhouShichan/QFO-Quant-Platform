@@ -9,6 +9,8 @@
 而不是直接写 StockBasicInfo.industry == xxx。
 """
 
+from typing import Any
+
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -29,13 +31,16 @@ def industry_filter(db: Session, industries: list[str]):
     Usage:
         query = query.filter(industry_filter(db, ["房地产", "煤炭开采"]))
     """
-    ts_sub_set = {r[0] for r in db.query(StockBasicInfo.industry).distinct().all() if r[0]}
-    conditions = []
+    ts_rows: list[Any] = db.query(StockBasicInfo.industry).distinct().all()
+    ts_sub_set = {r[0] for r in ts_rows if r[0]}
+    conditions: list[Any] = []
     direct = [i for i in industries if i in ts_sub_set]
     if direct:
         conditions.append(StockBasicInfo.industry.in_(direct))
     # 所有名称都尝试申万匹配（覆盖重叠名称如"家用电器"）
-    sw_codes_q = db.query(SwIndustry.code).filter(SwIndustry.sw_l1_name.in_(industries), SwIndustry.out_date.is_(None))
+    sw_codes_q: Any = db.query(SwIndustry.code).filter(
+        SwIndustry.sw_l1_name.in_(industries), SwIndustry.out_date.is_(None)
+    )
     conditions.append(StockBasicInfo.code.in_(sw_codes_q))
     return or_(*conditions)
 
@@ -53,14 +58,13 @@ def get_industry_codes(db: Session, industry: str) -> set[str]:
     """
     codes = set()
     # Tushare sub-industry
-    ts_codes = {r[0] for r in db.query(StockBasicInfo.code).filter(StockBasicInfo.industry == industry).all()}
+    ts_rows: list[Any] = db.query(StockBasicInfo.code).filter(StockBasicInfo.industry == industry).all()
+    ts_codes = {r[0] for r in ts_rows}
     codes.update(ts_codes)
     # 申万 L1
-    sw_codes = {
-        r[0]
-        for r in db.query(SwIndustry.code)
-        .filter(SwIndustry.sw_l1_name == industry, SwIndustry.out_date.is_(None))
-        .all()
-    }
+    sw_rows: list[Any] = (
+        db.query(SwIndustry.code).filter(SwIndustry.sw_l1_name == industry, SwIndustry.out_date.is_(None)).all()
+    )
+    sw_codes = {r[0] for r in sw_rows}
     codes.update(sw_codes)
     return codes

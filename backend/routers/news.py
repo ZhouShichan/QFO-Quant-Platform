@@ -9,10 +9,11 @@ GET  /api/news/event-stats   — 事件回测统计
 import json
 import threading
 from datetime import datetime, timedelta
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import ColumnElement, func
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -50,7 +51,7 @@ async def get_news(
 ):
     """获取新闻列表"""
     q = db.query(StockNews)
-    effective_time = func.coalesce(StockNews.publish_time, StockNews.created_at)
+    effective_time: ColumnElement[datetime] = func.coalesce(StockNews.publish_time, StockNews.created_at)
 
     # 默认排除结构化事件（大宗/解禁/龙虎榜），K线可视化需要时传 include_events=true
     if not include_events:
@@ -89,11 +90,11 @@ async def get_news(
     # 收集关联代码，查名称和涨跌幅
     all_codes = set()
     for n in items:
-        for c in _safe_loads_codes(n.related_codes):
+        for c in _safe_loads_codes(cast(str, n.related_codes)):
             all_codes.add(c)
 
     code_name_map = {}
-    code_change_map = {}
+    code_change_map: dict[str, float] = {}
     if all_codes:
         from models.quant_data import StockDailyBar
         from utils.name_resolver import resolve_names
@@ -126,11 +127,11 @@ async def get_news(
                 if (n.publish_time or n.created_at)
                 else None,
                 "market_type": n.market_type,
-                "related_codes": _safe_loads_codes(n.related_codes),
+                "related_codes": _safe_loads_codes(cast(str, n.related_codes)),
                 "sentiment_score": n.sentiment_score,
                 "sentiment_label": n.sentiment_label,
                 "event_type": n.event_type,
-                "nlp_reason": _clean_reason(n.nlp_reason),
+                "nlp_reason": _clean_reason(cast(str, n.nlp_reason)),
             }
             for n in items
         ],
@@ -290,7 +291,7 @@ async def batch_sentiment(
         return {}
 
     since = datetime.now() - timedelta(days=days)
-    effective_time = func.coalesce(StockNews.publish_time, StockNews.created_at)
+    effective_time: ColumnElement[datetime] = func.coalesce(StockNews.publish_time, StockNews.created_at)
     # SQL 层按 codes 过滤，避免加载全部新闻到内存
     from sqlalchemy import or_
 
@@ -380,7 +381,8 @@ async def get_auto_config():
 
 class AutoConfigRequest(BaseModel):
     enabled: bool = Field(True, description="是否启用自动抓取")
-    interval_hours: int = Field(None, ge=1, le=24, description="间隔小时数(1-24)")
+    # 保留非 Optional 注解以维持原 OpenAPI schema（默认 None 仅表示"不修改"，函数内已判空）
+    interval_hours: int = Field(None, ge=1, le=24, description="间隔小时数(1-24)")  # type: ignore[assignment]
 
 
 @router.post("/auto-config")

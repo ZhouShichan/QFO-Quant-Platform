@@ -10,7 +10,7 @@ log = structlog.get_logger(__name__)
 
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -431,7 +431,9 @@ class StockService:
         # --- Fallback: Tushare API ---
         try:
             if "tushare" in self._sources:
-                ts_source = self._sources["tushare"]
+                # TushareSource 专有接口（_is_api_available/_format_ts_code/pro 等），
+                # 基类 DataSourceBase 未声明，此处显式收窄类型
+                ts_source = cast(TushareSource, self._sources["tushare"])
                 if ts_source._is_api_available("daily_basic"):
                     ts_code = ts_source._format_ts_code(code)
                     kwargs = {"ts_code": ts_code}
@@ -444,7 +446,7 @@ class StockService:
         except Exception as e:
             err_str = str(e)
             if "权限" in err_str or "积分" in err_str:
-                self._sources["tushare"]._mark_api_unavailable("daily_basic", err_str)
+                cast(TushareSource, self._sources["tushare"])._mark_api_unavailable("daily_basic", err_str)
             log.warning("tushare_daily_basic_api_error", error=str(e))
 
         # 降级：从财务数据中提取 PE/PB

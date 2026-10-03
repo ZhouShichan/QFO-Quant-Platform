@@ -186,7 +186,7 @@ def _fetch_nav_tushare(etf_codes: list[str], trade_date: str) -> dict:
     from data_sources.tushare_source import TushareSource
 
     ts = TushareSource()
-    result = {}
+    result: dict[str, dict[str, float | None]] = {}
     etf_set = set(etf_codes)
     if not ts.pro:
         log.warning("nav_tushare_skip_no_pro")
@@ -255,7 +255,7 @@ def _fetch_share_tushare(etf_codes: list[str], trade_date: str) -> dict:
 
     ts = TushareSource()
     etf_set = set(etf_codes)
-    result = {}
+    result: dict[str, float] = {}
     if not ts.pro:
         log.warning("share_tushare_skip_no_pro")
         return result

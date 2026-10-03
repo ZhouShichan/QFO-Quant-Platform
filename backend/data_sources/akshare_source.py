@@ -4,7 +4,7 @@ AkShare 数据源实现
 """
 
 import time
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import structlog
@@ -28,9 +28,9 @@ class AkShareSource(DataSourceBase):
         import akshare as ak
 
         self.ak = ak
-        self._stock_list_cache = None
+        self._stock_list_cache: pd.DataFrame | None = None
         self._stock_list_ts = 0.0  # 缓存时间戳
-        self._bond_list_cache = None
+        self._bond_list_cache: pd.DataFrame | None = None
         self._bond_list_ts = 0.0
 
     # ---------- 缓存辅助 ----------
@@ -54,7 +54,7 @@ class AkShareSource(DataSourceBase):
                 self._stock_list_cache = self.ak.stock_zh_a_spot_em()
                 self._stock_list_ts = time.time()
 
-            df = self._stock_list_cache
+            df = cast(pd.DataFrame, self._stock_list_cache)
             match = df[df["代码"] == code]
             if match.empty:
                 return None
@@ -174,7 +174,7 @@ class AkShareSource(DataSourceBase):
                 self._stock_list_cache = self.ak.stock_zh_a_spot_em()
                 self._stock_list_ts = time.time()
 
-            df = self._stock_list_cache
+            df = cast(pd.DataFrame, self._stock_list_cache)
             stocks = []
 
             for _, row in df.iterrows():
@@ -223,7 +223,7 @@ class AkShareSource(DataSourceBase):
             else:
                 latest_balance = {}
 
-            result = {
+            result: dict[str, Any] = {
                 "code": code,
                 "revenue": float(latest_profit.get("营业收入", 0) or 0),
                 "net_profit": float(latest_profit.get("净利润", 0) or 0),
@@ -252,7 +252,7 @@ class AkShareSource(DataSourceBase):
                 self._bond_list_cache = self.ak.bond_zh_cov()
                 self._bond_list_ts = time.time()
 
-            df = self._bond_list_cache
+            df = cast(pd.DataFrame, self._bond_list_cache)
             code_col = self._detect_col(df, ["债券代码", "bond_code", "code", "代码"])
             if not code_col:
                 return None
@@ -285,7 +285,7 @@ class AkShareSource(DataSourceBase):
                 self._bond_list_cache = self.ak.bond_zh_cov()
                 self._bond_list_ts = time.time()
 
-            df = self._bond_list_cache
+            df = cast(pd.DataFrame, self._bond_list_cache)
             code_col = self._detect_col(df, ["债券代码", "bond_code", "code", "代码"])
             name_col = self._detect_col(df, ["债券简称", "bond_name", "name", "简称"])
             stock_col = self._detect_col(df, ["正股简称", "stock_name", "正股名称"])

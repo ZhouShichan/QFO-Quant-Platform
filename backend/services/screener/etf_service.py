@@ -8,10 +8,11 @@ ETF 筛选 Service
 import math
 import re
 from collections import defaultdict
+from typing import Any, cast
 
 import structlog
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Query, Session
 
 from models.quant_data import StockBasicInfo, StockDailyBar
 
@@ -212,14 +213,17 @@ def _query_industry_stocks(db: Session, sig_list, top_n, order_desc=True):
             continue
         seen.add(ind)
 
-        stock_codes = [
+        stock_codes: list[str] = [
             r[0]
-            for r in db.query(SwIndustry.code)
-            .filter(
-                SwIndustry.sw_l1_name == ind,
-                SwIndustry.out_date.is_(None),
+            for r in cast(
+                list[Any],
+                db.query(SwIndustry.code)
+                .filter(
+                    SwIndustry.sw_l1_name == ind,
+                    SwIndustry.out_date.is_(None),
+                )
+                .all(),
             )
-            .all()
         ]
         # 排除北交所（4/8/9开头），流动性差不适合联动推荐
         stock_codes = [c for c in stock_codes if c[0] not in ("4", "8", "9")]
@@ -229,14 +233,17 @@ def _query_industry_stocks(db: Session, sig_list, top_n, order_desc=True):
 
             stock_codes = [
                 r[0]
-                for r in db.query(StockBasicInfo.code)
-                .filter(
-                    or_(StockBasicInfo.industry.like(f"%{ind[:2]}%"), StockBasicInfo.industry == ind),
-                    ~StockBasicInfo.code.like("4%"),
-                    ~StockBasicInfo.code.like("8%"),
-                    ~StockBasicInfo.code.like("9%"),
+                for r in cast(
+                    list[Any],
+                    db.query(StockBasicInfo.code)
+                    .filter(
+                        or_(StockBasicInfo.industry.like(f"%{ind[:2]}%"), StockBasicInfo.industry == ind),
+                        ~StockBasicInfo.code.like("4%"),
+                        ~StockBasicInfo.code.like("8%"),
+                        ~StockBasicInfo.code.like("9%"),
+                    )
+                    .all(),
                 )
-                .all()
             ]
 
         if not stock_codes:
@@ -410,7 +417,7 @@ def get_etf_stock_link(db: Session, *, volume_ratio: float = 1.5, top_n: int = 5
     }
 
 
-def get_etf_list(db: Session, *, category: str = None) -> dict:
+def get_etf_list(db: Session, *, category: str | None = None) -> dict:
     """ETF 分类列表 + 最新行情。"""
     from models.quant_data import EtfBasicInfo, EtfDailyBar
 
@@ -472,11 +479,13 @@ def get_etf_reversal(db: Session, *, top_n: int = 5) -> dict:
     from models.quant_data import EtfBasicInfo, EtfDailyBar
     from utils.trade_date import get_verified_trade_date
 
-    etf_codes = [r[0] for r in db.query(EtfBasicInfo.code).filter(EtfBasicInfo.is_active == True).all()]
+    etf_codes: list[str] = [
+        r[0] for r in cast(list[Any], db.query(EtfBasicInfo.code).filter(EtfBasicInfo.is_active == True).all())
+    ]
     if not etf_codes:
         return {"weak_to_strong": [], "strong_to_weak": [], "error": "无ETF数据"}
 
-    recent_dates = (
+    recent_dates: list[Any] = (
         db.query(EtfDailyBar.trade_date)
         .filter(EtfDailyBar.code.in_(etf_codes))
         .distinct()
@@ -548,12 +557,14 @@ def get_etf_reversal(db: Session, *, top_n: int = 5) -> dict:
     }
 
 
-def etf_smart_screen(db: Session, *, top_n: int = 20, category: str = None, sub_category: str = None) -> dict:
+def etf_smart_screen(
+    db: Session, *, top_n: int = 20, category: str | None = None, sub_category: str | None = None
+) -> dict:
     """ETF 一键智能筛选：成交活跃度 + 趋势强度 + 波动率综合评分。"""
     from models.quant_data import EtfBasicInfo, EtfDailyBar
     from utils.trade_date import get_verified_trade_date
 
-    q = db.query(EtfBasicInfo.code).filter(EtfBasicInfo.is_active == True)
+    q: Query = db.query(EtfBasicInfo.code).filter(EtfBasicInfo.is_active == True)
     if category:
         q = q.filter(EtfBasicInfo.category == category)
     if sub_category:
@@ -566,15 +577,16 @@ def etf_smart_screen(db: Session, *, top_n: int = 20, category: str = None, sub_
         return {"etfs": [], "error": "无ETF数据"}
 
     # 取250天用于1年均涨，前20天用于短期评分
-    all_dates = [
+    all_dates: list[Any] = [
         r[0]
-        for r in (
+        for r in cast(
+            list[Any],
             db.query(EtfDailyBar.trade_date)
             .filter(EtfDailyBar.code.in_(etf_codes))
             .distinct()
             .order_by(EtfDailyBar.trade_date.desc())
             .limit(250)
-            .all()
+            .all(),
         )
     ]
     if len(all_dates) < 5:
@@ -914,19 +926,22 @@ def get_etf_ranking(db: Session, *, top_n: int = 10) -> dict:
     """ETF 当日/5日涨跌排行 Top N。"""
     from models.quant_data import EtfBasicInfo, EtfDailyBar
 
-    etf_codes = [r[0] for r in db.query(EtfBasicInfo.code).filter(EtfBasicInfo.is_active == True).all()]
+    etf_codes: list[str] = [
+        r[0] for r in cast(list[Any], db.query(EtfBasicInfo.code).filter(EtfBasicInfo.is_active == True).all())
+    ]
     if not etf_codes:
         return {"today_top": [], "today_bottom": [], "fiveday_top": [], "fiveday_bottom": [], "error": "无ETF数据"}
 
-    recent_dates = [
+    recent_dates: list[Any] = [
         r[0]
-        for r in (
+        for r in cast(
+            list[Any],
             db.query(EtfDailyBar.trade_date)
             .filter(EtfDailyBar.code.in_(etf_codes))
             .distinct()
             .order_by(EtfDailyBar.trade_date.desc())
             .limit(6)
-            .all()
+            .all(),
         )
     ]
     if not recent_dates:
@@ -1024,15 +1039,16 @@ def get_etf_overview(db: Session) -> dict:
     etf_codes = [e.code for e in etf_all]
     info_map = {e.code: e for e in etf_all}
 
-    recent_dates = [
+    recent_dates: list[Any] = [
         r[0]
-        for r in (
+        for r in cast(
+            list[Any],
             db.query(EtfDailyBar.trade_date)
             .filter(EtfDailyBar.code.in_(etf_codes))
             .distinct()
             .order_by(EtfDailyBar.trade_date.desc())
             .limit(6)
-            .all()
+            .all(),
         )
     ]
     if not recent_dates:
@@ -1207,22 +1223,23 @@ def get_etf_rotation(db: Session, *, days: int = 30) -> dict:
     etf_codes = [e.code for e in etf_all]
     info_map = {e.code: e for e in etf_all}
 
-    trade_dates = [
+    trade_dates: list[Any] = [
         r[0]
-        for r in (
+        for r in cast(
+            list[Any],
             db.query(EtfDailyBar.trade_date)
             .filter(EtfDailyBar.code.in_(etf_codes))
             .distinct()
             .order_by(EtfDailyBar.trade_date.desc())
             .limit(days)
-            .all()
+            .all(),
         )
     ]
     if len(trade_dates) < 3:
         return {"dates": [], "categories": [], "matrix": [], "signals": [], "error": "数据不足"}
     trade_dates.sort()
 
-    bars = (
+    bars: list[Any] = (
         db.query(EtfDailyBar.code, EtfDailyBar.trade_date, EtfDailyBar.pct_chg)
         .filter(
             EtfDailyBar.code.in_(etf_codes),

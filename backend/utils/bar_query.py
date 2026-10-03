@@ -4,6 +4,7 @@
 """
 
 from functools import lru_cache
+from typing import Any
 
 from core.database import db_session
 from models.quant_data import ConvertibleBondBar, EtfBasicInfo, EtfDailyBar, StockDailyBar
@@ -84,19 +85,20 @@ def classify_codes(codes: list) -> tuple:
     return stock_codes, etf_codes, bond_codes
 
 
-def query_bars(db, codes: list, filters: list = None):
+def query_bars(db, codes: list, filters: list | None = None):
     """
     统一批量查询日线（自动合并两张表的结果）
     返回 list of (code, trade_date, close, ...) rows
     """
     stock_codes, etf_codes, bond_codes = classify_codes(codes)
-    results = []
+    results: list[Any] = []
 
-    for model, sub_codes in [
+    bar_models: list[tuple[type[StockDailyBar | EtfDailyBar | ConvertibleBondBar], list[str]]] = [
         (StockDailyBar, stock_codes),
         (EtfDailyBar, etf_codes),
         (ConvertibleBondBar, bond_codes),
-    ]:
+    ]
+    for model, sub_codes in bar_models:
         if not sub_codes:
             continue
         q = db.query(model.code, model.trade_date, model.close).filter(model.code.in_(sub_codes))

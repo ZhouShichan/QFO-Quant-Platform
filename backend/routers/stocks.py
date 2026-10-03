@@ -5,6 +5,7 @@
 """
 
 from datetime import date, datetime, timedelta
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -45,7 +46,8 @@ async def get_stock_history(
     if not end_date:
         from utils.trade_date import get_table_latest_date
 
-        end_date = get_table_latest_date("bars")
+        # 保留原参数注解以维持 OpenAPI schema；返回 None 的情形由下方判空兜底
+        end_date = cast(str, get_table_latest_date("bars"))
         if not end_date:
             return {"code": code, "data": [], "message": "无行情数据，请先同步"}
     if not start_date:

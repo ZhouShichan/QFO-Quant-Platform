@@ -118,7 +118,7 @@ def analyze_events(
 
     # 批量加载价格数据（单次查询替代 N+1）
     max_period = max(periods)
-    price_cache = {}
+    price_cache: dict[str, list] = {}
     if events:
         all_dates = [e["pub_date"] for e in events]
         min_date = min(all_dates)
@@ -182,7 +182,7 @@ def _aggregate(details: list, periods: list) -> dict:
 
     summary = {}
     for et, items in groups.items():
-        stats = {"count": len(items)}
+        stats: dict[str, float] = {"count": len(items)}
         for p in periods:
             key = f"r{p}d"
             vals = [d[key] for d in items if key in d]

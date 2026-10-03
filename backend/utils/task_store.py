@@ -38,7 +38,7 @@ class TaskStore:
             }
         return task_id
 
-    def update_task(self, task_id: str, status: TaskStatus, result: Any = None, error: str = None):
+    def update_task(self, task_id: str, status: TaskStatus, result: Any = None, error: str | None = None):
         """更新任务状态"""
         with self._lock:
             if task_id in self._tasks:

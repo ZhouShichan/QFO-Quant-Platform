@@ -7,6 +7,7 @@
 import threading
 import time as _time
 from datetime import datetime, timedelta
+from typing import cast
 
 import structlog
 from fastapi import APIRouter, HTTPException
@@ -129,7 +130,7 @@ async def calculate_factors(request: FactorRequest):
     # 查询实际数据范围（轻量 MIN/MAX，走索引）
     actual_start, actual_end = start_date, end_date
     try:
-        from sqlalchemy import and_, func
+        from sqlalchemy import ColumnElement, and_, func
 
         from core.database import db_session
         from models.quant_data import StockDailyBar
@@ -143,8 +144,8 @@ async def calculate_factors(request: FactorRequest):
                 .filter(
                     and_(
                         StockDailyBar.code.in_(request.codes[:10]),  # 抽样即可
-                        StockDailyBar.trade_date >= start_date,
-                        StockDailyBar.trade_date <= end_date,
+                        cast("ColumnElement[bool]", StockDailyBar.trade_date >= start_date),
+                        cast("ColumnElement[bool]", StockDailyBar.trade_date <= end_date),
                     )
                 )
                 .one()

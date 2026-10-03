@@ -6,6 +6,7 @@
 """
 
 from datetime import date, timedelta
+from typing import Any
 
 import structlog
 
@@ -354,7 +355,7 @@ def get_table_date_range(table: str = "bars", fmt: str = "%Y-%m-%d") -> tuple[st
         StockMoneyFlow,
     )
 
-    _models = {
+    _models: dict[str, Any] = {
         "bars": StockDailyBar,
         "factors": StockDailyFactor,
         "money_flow": StockMoneyFlow,

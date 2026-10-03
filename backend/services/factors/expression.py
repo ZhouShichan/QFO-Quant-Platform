@@ -14,6 +14,8 @@
 
 import ast
 import operator
+from collections.abc import Callable
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -44,7 +46,7 @@ ALLOWED_VARIABLES = {
 
 # ── 预设因子表达式库 ──
 
-PRESET_FACTORS = {
+PRESET_FACTORS: dict[str, dict[str, Any]] = {
     "反转因子": {
         "desc": "近期跌的更可能反弹（A股最显著 alpha）",
         "params": [{"name": "days", "label": "回看天数", "default": 20, "min": 5, "max": 120}],
@@ -245,7 +247,7 @@ def _min_func(x, y):
 
 # ── 函数注册表 ──
 
-ALLOWED_FUNCTIONS = {
+ALLOWED_FUNCTIONS: dict[str, Callable[..., Any]] = {
     # 时间序列（2参数: x, d）
     "delay": _delay,
     "delta": _delta,
@@ -274,7 +276,7 @@ ALLOWED_FUNCTIONS = {
 }
 
 # 二元运算符
-BINARY_OPS = {
+BINARY_OPS: dict[type, Callable[..., Any]] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -283,12 +285,12 @@ BINARY_OPS = {
     ast.Mod: operator.mod,
 }
 
-UNARY_OPS = {
+UNARY_OPS: dict[type, Callable[..., Any]] = {
     ast.USub: operator.neg,
     ast.UAdd: operator.pos,
 }
 
-COMPARE_OPS = {
+COMPARE_OPS: dict[type, Callable[..., Any]] = {
     ast.Lt: operator.lt,
     ast.LtE: operator.le,
     ast.Gt: operator.gt,
@@ -381,7 +383,7 @@ def _eval_node(node: ast.AST, panel: dict[str, pd.DataFrame]) -> pd.DataFrame | 
         return op_func(left, right)
 
     elif isinstance(node, ast.Call):
-        func_name = node.func.id
+        func_name = cast(ast.Name, node.func).id
         func = ALLOWED_FUNCTIONS[func_name]
         args = [_eval_node(arg, panel) for arg in node.args]
         return func(*args)

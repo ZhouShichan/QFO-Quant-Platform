@@ -14,6 +14,7 @@
 import pathlib
 import shutil
 from datetime import datetime, timedelta
+from typing import Any
 
 import structlog
 
@@ -186,7 +187,7 @@ def cleanup_cache(retain_days: int = CACHE_RETAIN_DAYS) -> int:
         return 0
 
 
-def cleanup_files(base_dir: str = None) -> dict:
+def cleanup_files(base_dir: str | None = None) -> dict:
     """
     清理项目中的临时文件：
     - __pycache__ 目录
@@ -252,7 +253,7 @@ def run_all_cleanups() -> dict:
     """
     log.info("cleanup_start", time=datetime.now().isoformat())
 
-    results = {
+    results: dict[str, Any] = {
         "db": cleanup_database(),
         "cache_expired_entries": cleanup_cache(),
         "files": cleanup_files(),

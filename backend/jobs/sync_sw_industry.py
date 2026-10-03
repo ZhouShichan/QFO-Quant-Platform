@@ -178,11 +178,11 @@ def _report(task_id, pct, message):
     if not task_id:
         return
     try:
-        from utils.task_store import task_store
+        from utils.task_store import TaskStatus, task_store
 
         task_store.update_task(
             task_id,
-            "running",
+            TaskStatus.RUNNING,
             result={
                 "progress": pct,
                 "message": message,

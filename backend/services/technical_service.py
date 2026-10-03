@@ -90,7 +90,7 @@ class TechnicalService:
 
     LOOKBACK = 120  # 需要最近 120 个交易日数据
 
-    def diagnose(self, code: str, end_date: str = None) -> dict | None:
+    def diagnose(self, code: str, end_date: str | None = None) -> dict | None:
         """单只完整诊断 — 6 维 + 综合评分 + 支撑压力"""
         data = self._load_bars(code, end_date)
         if data is None:
@@ -189,7 +189,7 @@ class TechnicalService:
 
     # ── 数据加载 ──
 
-    def _load_bars(self, code: str, end_date: str = None):
+    def _load_bars(self, code: str, end_date: str | None = None):
         """从 StockDailyBar/EtfDailyBar 加载最近 LOOKBACK 日 OHLCV"""
         from core.database import db_session
         from utils.bar_query import classify_codes

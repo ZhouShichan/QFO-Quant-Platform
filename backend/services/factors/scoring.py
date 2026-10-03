@@ -30,7 +30,7 @@ def cross_sectional_normalize(
     log_mkt_cap = np.log(mkt_caps)
 
     # 2. 建立行业分组字典
-    industry_groups = {}
+    industry_groups: dict[str, list[int]] = {}
     for i, r in enumerate(results):
         ind = r.get("industry", "未知")
         if not ind:
@@ -102,8 +102,8 @@ def calc_composite_score(
     factor_weights: dict[str, float],
 ) -> float:
     """计算综合得分（加权平均）"""
-    total_weight = 0
-    weighted_sum = 0
+    total_weight = 0.0
+    weighted_sum = 0.0
 
     for factor, score in factor_scores.items():
         if score is None:
@@ -115,7 +115,7 @@ def calc_composite_score(
 
     if total_weight > 0:
         return round(weighted_sum / total_weight, 2)
-    return 0
+    return 0.0
 
 
 def score_factors_vectorized(
@@ -200,7 +200,7 @@ def score_factors_vectorized(
 def analyze_factor_ic(
     df: pd.DataFrame,
     factor_weights: dict,
-    snapshots: list = None,
+    snapshots: list | None = None,
 ) -> dict:
     """
     因子绩效归因：滚动多截面 Rank IC + ICIR。
@@ -216,7 +216,7 @@ def analyze_factor_ic(
     # ── 多截面滚动 IC ──
     if snapshots and len(snapshots) >= 3:
         # 逐期逐因子计算 IC
-        ic_series = {fname: [] for fname in FACTOR_COL}
+        ic_series: dict[str, list[float]] = {fname: [] for fname in FACTOR_COL}
 
         for snap in snapshots:
             sdf = snap["df"]

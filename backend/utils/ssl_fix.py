@@ -7,6 +7,7 @@ SSL/TLS 修复模块
 import os
 import ssl
 import time
+from typing import cast
 
 
 def apply_ssl_fix():
@@ -26,7 +27,7 @@ def apply_ssl_fix():
 
     # 创建不验证证书的 SSL 上下文
     try:
-        ssl._create_default_https_context = ssl._create_unverified_context
+        ssl._create_default_https_context = ssl._create_unverified_context  # type: ignore[assignment]
     except AttributeError:
         pass
 
@@ -66,7 +67,7 @@ def _make_request_with_retry(method, url, max_retries=3, **kwargs):
             last_error = e
             if attempt < max_retries - 1:
                 time.sleep(0.5 * (attempt + 1))
-    raise last_error
+    raise cast(Exception, last_error)
 
 
 def patch_akshare():
@@ -101,10 +102,10 @@ def patch_akshare():
                 except Exception:
                     raise e from None
 
-        requests.get = patched_get
-        requests.post = patched_post
-        requests.api.get = patched_get
-        requests.api.post = patched_post
+        requests.get = patched_get  # type: ignore[assignment]
+        requests.post = patched_post  # type: ignore[assignment]
+        requests.api.get = patched_get  # type: ignore[assignment]
+        requests.api.post = patched_post  # type: ignore[assignment]
 
         print("[SSL Fix] AkShare TLS patch applied with retry mechanism")
         return True

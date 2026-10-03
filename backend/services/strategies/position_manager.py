@@ -32,7 +32,7 @@ class PositionManager:
         signals: np.ndarray,
         holding: np.ndarray,
         allow_reentry: bool = False,
-    ) -> tuple[np.ndarray, bool]:
+    ) -> tuple[np.ndarray | None, bool]:
         """
         信号驱动：逐日更新持仓。
 
@@ -68,8 +68,8 @@ class PositionManager:
         factor_scores: dict[str, float],
         top_n: int,
         strategy_type: str,
-        as_of_date: str = None,
-        max_single_weight: float = None,
+        as_of_date: str | None = None,
+        max_single_weight: float | None = None,
     ) -> np.ndarray:
         """
         因子驱动：按评分选 TopN，计算持仓权重。
@@ -168,7 +168,7 @@ class PositionManager:
         return w
 
     @staticmethod
-    def _double_low_weights(codes: list[str], as_of_date: str = None) -> np.ndarray:
+    def _double_low_weights(codes: list[str], as_of_date: str | None = None) -> np.ndarray:
         """从 ConvertibleBondFactor 表读双低分，倒数加权
 
         as_of_date: 截止日期，避免使用未来数据。None 时取最新。

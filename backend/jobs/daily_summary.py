@@ -7,6 +7,7 @@
 import json
 from collections import Counter
 from datetime import datetime, timedelta
+from typing import cast
 
 import structlog
 
@@ -37,13 +38,17 @@ def generate_daily_summary() -> str:
 
     with db_session() as db:
         from sqlalchemy import or_
+        from sqlalchemy.sql.elements import ColumnElement
 
         items = (
             db.query(StockNews)
             .filter(
                 or_(
-                    StockNews.publish_time >= since,
-                    (StockNews.publish_time.is_(None)) & (StockNews.created_at >= since),
+                    cast(ColumnElement[bool], StockNews.publish_time >= since),
+                    cast(
+                        ColumnElement[bool],
+                        (StockNews.publish_time.is_(None)) & (StockNews.created_at >= since),
+                    ),
                 )
             )
             .all()

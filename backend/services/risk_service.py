@@ -15,6 +15,8 @@
   Volatility      — 年化波动率
 """
 
+from typing import Any, cast
+
 import numpy as np
 import structlog
 
@@ -61,7 +63,7 @@ class RiskService:
         else:
             nv = np.array(net_values, dtype=float)
 
-        result = {}
+        result: dict[str, Any] = {}
 
         # ── 波动率 ──
         result["volatility"] = float(np.std(r) * np.sqrt(TRADING_DAYS) * 100)
@@ -131,7 +133,7 @@ class RiskService:
         """
         # ── 优先：本地 ETF 日线（510300.SH = 沪深300ETF）──
         try:
-            from sqlalchemy import and_
+            from sqlalchemy import ColumnElement, and_
 
             from core.database import db_session
             from models.quant_data import EtfDailyBar
@@ -142,8 +144,8 @@ class RiskService:
                     .filter(
                         and_(
                             EtfDailyBar.code == "510300.SH",
-                            EtfDailyBar.trade_date >= start_date,
-                            EtfDailyBar.trade_date <= end_date,
+                            cast(ColumnElement[bool], EtfDailyBar.trade_date >= start_date),
+                            cast(ColumnElement[bool], EtfDailyBar.trade_date <= end_date),
                         )
                     )
                     .order_by(EtfDailyBar.trade_date.asc())
@@ -169,8 +171,8 @@ class RiskService:
             load_dotenv()
             pro = ts.pro_api(os.getenv("TUSHARE_TOKEN", ""))
             s = start_date.replace("-", "")
-            e = end_date.replace("-", "")
-            df = pro.index_daily(ts_code="000300.SH", start_date=s, end_date=e, fields="trade_date,close")
+            end_compact = end_date.replace("-", "")
+            df = pro.index_daily(ts_code="000300.SH", start_date=s, end_date=end_compact, fields="trade_date,close")
             if df is not None and not df.empty:
                 df = df.sort_values("trade_date")
                 closes = df["close"].values.astype(float)
@@ -246,7 +248,7 @@ class RiskService:
         dd = (nv - peak) / peak  # 负值
 
         in_drawdown = False
-        periods = []
+        periods: list[dict[str, Any]] = []
         start_i = 0
 
         for i in range(len(nv)):

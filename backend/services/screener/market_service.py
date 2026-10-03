@@ -8,10 +8,11 @@
 import math
 from datetime import date as _date_cls
 from datetime import timedelta
+from typing import Any, cast
 
 import structlog
-from sqlalchemy import and_, exists, func, or_, select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy import ColumnElement, and_, exists, func, or_, select
+from sqlalchemy.orm import Query, Session, aliased
 
 from models.quant_data import (
     ConvertibleBondBasic,
@@ -89,7 +90,7 @@ def screen_stocks(
     latest_bar_date = _date.fromisoformat(latest_bar_date_str) if latest_bar_date_str else None
 
     # ── 构建多表 JOIN 查询 ──
-    query = (
+    query: Query = (
         db.query(
             StockBasicInfo.code,
             StockBasicInfo.name,
@@ -546,7 +547,7 @@ def get_stock_reversal(db: Session, *, top_n: int = 5) -> dict:
     """
     from utils.trade_date import get_verified_trade_date
 
-    recent_dates = (
+    recent_dates: list[Any] = (
         db.query(StockDailyBar.trade_date).distinct().order_by(StockDailyBar.trade_date.desc()).limit(6).all()
     )
     if len(recent_dates) < 2:
@@ -652,7 +653,7 @@ def get_industry_heat(db: Session) -> dict:
 
     if use_index:
         # ===== 行业指数模式 =====
-        rows_1d = (
+        rows_1d: list[Any] = (
             db.query(
                 IndustryIndexDaily.name,
                 IndustryIndexDaily.pct_chg,
@@ -662,7 +663,7 @@ def get_industry_heat(db: Session) -> dict:
         )
         heat_l1 = {r[0]: round(float(r[1]), 2) if r[1] is not None else 0.0 for r in rows_1d}
 
-        recent_dates = (
+        recent_dates: list[Any] = (
             db.query(IndustryIndexDaily.trade_date)
             .distinct()
             .order_by(IndustryIndexDaily.trade_date.desc())
@@ -864,7 +865,11 @@ def get_stock_to_etf(db: Session, *, code: str) -> dict:
             industry_name = sub_ind
         else:
             all_etf_inds = [
-                r[0] for r in db.query(EtfBasicInfo.industry).filter(EtfBasicInfo.industry.isnot(None)).distinct().all()
+                r[0]
+                for r in cast(
+                    list[Any],
+                    db.query(EtfBasicInfo.industry).filter(EtfBasicInfo.industry.isnot(None)).distinct().all(),
+                )
             ]
             industry_name = None
             for ei in all_etf_inds:
@@ -893,7 +898,10 @@ def get_stock_to_etf(db: Session, *, code: str) -> dict:
     )
     if exact_count == 0:
         all_etf_inds = [
-            r[0] for r in db.query(EtfBasicInfo.industry).filter(EtfBasicInfo.industry.isnot(None)).distinct().all()
+            r[0]
+            for r in cast(
+                list[Any], db.query(EtfBasicInfo.industry).filter(EtfBasicInfo.industry.isnot(None)).distinct().all()
+            )
         ]
         for ei in all_etf_inds:
             if (len(industry_name) >= 3 and industry_name[:3] in ei) or ei in industry_name:
@@ -909,7 +917,7 @@ def get_stock_to_etf(db: Session, *, code: str) -> dict:
         .all()
     )
 
-    etf_list = []
+    etf_list: list[Any] = []
     for e in etfs:
         latest = (
             db.query(EtfDailyBar).filter(EtfDailyBar.code == e.code).order_by(EtfDailyBar.trade_date.desc()).first()
@@ -982,7 +990,7 @@ def get_event_tags(db: Session, codes: list) -> dict:
     cutoff = _date_cls.today() - timedelta(days=_EVENT_WINDOW_DAYS)
 
     # 事件标签：查询近期结构化事件
-    event_rows = (
+    event_rows: list[Any] = (
         db.query(
             StockNews.code,
             StockNews.event_type,
@@ -990,7 +998,7 @@ def get_event_tags(db: Session, codes: list) -> dict:
         .filter(
             StockNews.code.in_(codes),
             StockNews.event_type.in_(["大宗交易", "解禁", "龙虎榜"]),
-            StockNews.publish_time >= cutoff,
+            cast(ColumnElement[bool], StockNews.publish_time >= cutoff),
         )
         .all()
     )

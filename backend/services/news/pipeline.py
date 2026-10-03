@@ -47,7 +47,7 @@ class NewsPipeline:
 
     def _init_fetchers(self) -> list[BaseFetcher]:
         """根据可用性自动发现 Fetcher"""
-        fetchers = []
+        fetchers: list[BaseFetcher] = []
 
         from services.news.fetchers.tushare import TushareFetcher
 

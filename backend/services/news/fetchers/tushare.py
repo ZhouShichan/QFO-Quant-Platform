@@ -20,7 +20,7 @@ class TushareFetcher(BaseFetcher):
     source_name = "tushare"
 
     def fetch(self, codes: list[str], names: dict[str, str]) -> list[RawNewsItem]:
-        items = []
+        items: list[RawNewsItem] = []
         try:
             import tushare as ts
 

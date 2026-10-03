@@ -239,7 +239,7 @@ _ETF_INDUSTRY_MAP = {
 }
 
 
-def _map_etf_industry(name: str) -> str:
+def _map_etf_industry(name: str) -> str | None:
     """根据 ETF 名称关键词映射到股票行业（仅行业 ETF 有值）"""
     if not name:
         return None
@@ -353,7 +353,7 @@ _SUB_CATEGORY_RULES = {
 }
 
 
-def _sub_classify_etf(name: str, category: str) -> str:
+def _sub_classify_etf(name: str, category: str) -> str | None:
     """根据名称和一级分类推导二级分类"""
     if not name or category not in _SUB_CATEGORY_RULES:
         return None
@@ -421,7 +421,7 @@ def sync_etf_basic(task_id: str | None = None) -> int:
                     else _sub_classify_etf(name, category),
                     # “其他”分类不展示；未上市（list_date 为空或未来）也标为非活跃
                     "is_active": category != "其他"
-                    and bool(list_date_str)
+                    and list_date_str is not None
                     and list_date_str <= date.today().isoformat(),
                 }
             )

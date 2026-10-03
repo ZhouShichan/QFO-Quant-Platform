@@ -15,7 +15,7 @@ from models.quant_data import SyncWatermark
 log = structlog.get_logger("sync_base")
 
 
-def report_progress(task_id: str, current: int, total: int, message: str, extra: dict = None):
+def report_progress(task_id: str, current: int, total: int, message: str, extra: dict | None = None):
     """向 task_store 上报进度"""
     try:
         from utils.task_store import TaskStatus, task_store
@@ -34,7 +34,9 @@ def report_progress(task_id: str, current: int, total: int, message: str, extra:
         pass
 
 
-def write_watermark(data_type: str, mode: str, last_sync_date: str, t_start: float, status: str, error_msg: str = None):
+def write_watermark(
+    data_type: str, mode: str, last_sync_date: str | None, t_start: float, status: str, error_msg: str | None = None
+):
     """向 sync_watermark 表写入一条同步水位记录"""
     try:
         import pandas as pd

@@ -4,7 +4,7 @@ log = structlog.get_logger(__name__)
 """回测服务（三层架构调度器）: 信号层 → 仓位层 → 模拟层"""
 from collections import OrderedDict
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -21,7 +21,7 @@ from utils.asset_type import classify as classify_asset
 class BacktestService:
     """回测服务"""
 
-    def __init__(self, stock_service: StockService = None):
+    def __init__(self, stock_service: StockService | None = None):
         self.stock_service = stock_service or StockService()
         self.factor_service = FactorService(self.stock_service)
 
@@ -35,16 +35,16 @@ class BacktestService:
 
     def run_backtest(
         self,
-        stock_codes: list[str] = None,
+        stock_codes: list[str] | None = None,
         strategy_type: str = "multifactor",
-        start_date: str = None,
-        end_date: str = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         initial_cash: float = 1000000,
         commission: float = 0.0003,
-        selected_factors: dict[str, bool] = None,
+        selected_factors: dict[str, bool] | None = None,
         rebalance_period: str = "monthly",
-        strategy_params: dict[str, Any] = None,
-        universe_config: dict[str, Any] = None,
+        strategy_params: dict[str, Any] | None = None,
+        universe_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         from utils.trade_date import get_table_date_range
 
@@ -131,10 +131,10 @@ class BacktestService:
         end_date: str,
         initial_cash: float,
         commission: float,
-        selected_factors: dict[str, bool],
+        selected_factors: dict[str, bool] | None,
         rebalance_period: str = "monthly",
-        strategy_params: dict[str, Any] = None,
-        per_date_codes: dict[str, list[str]] = None,
+        strategy_params: dict[str, Any] | None = None,
+        per_date_codes: dict[str, list[str]] | None = None,
     ) -> dict[str, Any]:
         if strategy_params is None:
             strategy_params = {}
@@ -165,13 +165,15 @@ class BacktestService:
         # ── 加载可交易状态矩阵（停牌/涨跌停过滤）──
         can_buy, can_sell = self._load_tradeable_mask(stock_codes, start_date, end_date, valid_codes, dates)
         topN = top_n_param if top_n_param else max(1, min(5, n))
-        max_single_weight = strategy_params.get("max_single_weight")  # None=不限
+        max_single_weight = strategy_params.get(
+            "max_single_weight"
+        )  # None=不限（运行时接受 None，见 position_manager.py 注解）
         # ── Step 2: 信号层 ── 策略生成信号矩阵
         is_signal = strategy.is_signal_based
         signal_matrix = None
         if is_signal:
             # 加载成交量（仅当策略需要时）
-            vol_arr = None
+            vol_arr: np.ndarray | None = None
             if getattr(strategy, "needs_volume", False):
                 vol_df = self._load_volume_matrix(stock_codes, start_date, end_date, valid_codes, dates)
                 if vol_df is not None:
@@ -328,8 +330,8 @@ class BacktestService:
                 if weights.sum() > 0:
                     weights = weights / weights.sum()
                 portfolio_rets[i] -= pos_mgr.calc_cost(current_weights, weights)
-                prev_top = set(np.where(current_weights > 0)[0])
-                new_top = set(np.where(weights > 0)[0])
+                prev_top = cast(set, set(np.where(current_weights > 0)[0]))
+                new_top = cast(set, set(np.where(weights > 0)[0]))
                 reason_buy = "信号买入" if is_signal else f"因子 Top{topN}"
                 reason_sell = "信号卖出" if is_signal else f"调出 Top{topN}"
                 # 信号策略：生成具体决策依据
@@ -707,6 +709,7 @@ class BacktestService:
         etf_set = set(etf_codes_db)
         bond_set = set(bond_codes_db)
 
+        idx: int | None
         for code, idx in code_to_idx.items():
             pure = code.split(".")[0]
             if code in etf_set or code in bond_set:
@@ -724,7 +727,7 @@ class BacktestService:
         BATCH_SIZE = 900
         with db_session() as db:
             if stock_codes_db:
-                rows = []
+                rows: list = []
                 for i in range(0, len(stock_codes_db), BATCH_SIZE):
                     batch = stock_codes_db[i : i + BATCH_SIZE]
                     batch_rows = (
@@ -794,11 +797,12 @@ class BacktestService:
         with db_session() as db:
             stock_codes, etf_codes, bond_codes = classify_codes(codes)
             all_rows = []
-            for model, sub_codes in [
+            model_pairs: list[tuple[Any, list[str]]] = [
                 (StockDailyBar, stock_codes),
                 (EtfDailyBar, etf_codes),
                 (ConvertibleBondBar, bond_codes),
-            ]:
+            ]
+            for model, sub_codes in model_pairs:
                 if not sub_codes:
                     continue
                 for i in range(0, len(sub_codes), BATCH_SIZE):
@@ -826,7 +830,6 @@ class BacktestService:
 
     @staticmethod
     def _get_rebal_indices(dates: list[str], period: str) -> list[int]:
-
         if not dates:
             return []
         indices = [0]  # 第一天必调仓

@@ -146,7 +146,7 @@ class FactorService:
 
     def get_industry_exposure(self, factor_results: list[dict]) -> dict[str, Any]:
         """获取行业分布"""
-        industry_data = {}
+        industry_data: dict[str, list[str]] = {}
         for stock in factor_results:
             industry = stock.get("industry", "未知")
             name = stock.get("name", stock.get("code", ""))

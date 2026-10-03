@@ -11,6 +11,6 @@ from .base import DataSourceBase
 try:
     from .tushare_source import TushareSource
 except ImportError:
-    TushareSource = None
+    TushareSource = None  # type: ignore[misc,assignment]
 
 __all__ = ["DataSourceBase", "AkShareSource", "BaostockSource", "TushareSource"]

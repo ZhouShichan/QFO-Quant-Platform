@@ -6,6 +6,8 @@ POST /risk/analyze
   — 可独立运行，无需先跑回测
 """
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -43,7 +45,7 @@ def analyze_risk(req: AnalyzeRequest):
         if not codes:
             raise HTTPException(status_code=400, detail="codes 不能为空")
 
-        weights = req.weights
+        weights: list[float] | np.ndarray | None = req.weights
         if not weights or len(weights) != len(codes):
             weights = [1.0 / len(codes)] * len(codes)
         weights = np.array(weights, dtype=float)
@@ -51,7 +53,7 @@ def analyze_risk(req: AnalyzeRequest):
 
         # 读取各股/ETF历史收益率（自动路由到正确的表）
         stock_returns = {}
-        all_dates = []
+        all_dates: list[Any] = []
         with db_session() as db:
             for code in codes:
                 BarModel = get_bar_model(code)

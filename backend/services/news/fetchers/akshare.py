@@ -21,7 +21,7 @@ class AkShareFetcher(BaseFetcher):
     source_name = "akshare"
 
     def fetch(self, codes: list[str], names: dict[str, str]) -> list[RawNewsItem]:
-        items = []
+        items: list[RawNewsItem] = []
         try:
             import akshare as ak
         except ImportError:

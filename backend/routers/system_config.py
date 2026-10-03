@@ -118,7 +118,7 @@ _ENV_DEFAULTS = {
 
 def _read_env() -> dict:
     """解析 .env 文件为 dict（只读取有值的行）"""
-    result = {}
+    result: dict[str, str] = {}
     if not _ENV_PATH.exists():
         return result
     for line in _ENV_PATH.read_text(encoding="utf-8").splitlines():
