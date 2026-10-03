@@ -5,8 +5,8 @@ title Quant Platform - Launcher
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
 set "FRONTEND=%ROOT%frontend"
-set "VENV_PYTHON=%BACKEND%\.venv\Scripts\python.exe"
-set "VENV_PIP=%BACKEND%\.venv\Scripts\pip.exe"
+set "VENV_PYTHON=%ROOT%.venv\Scripts\python.exe"
+set "VENV_PIP=%ROOT%.venv\Scripts\pip.exe"
 set "PIP_MIRROR=-i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com"
 
 echo ==========================================
@@ -36,8 +36,24 @@ if %errorlevel% neq 0 (
 for /f "tokens=1 delims= " %%v in ('node --version 2^>^&1') do set "NODEVER=%%v"
 echo   [OK] Node.js %NODEVER%
 
-:: 3. Backend venv
-echo [3/5] Checking backend virtual environment...
+:: 3. Backend dependencies (uv preferred, pip fallback)
+echo [3/5] Checking backend dependencies...
+where uv >nul 2>&1
+if %errorlevel% neq 0 goto pip_ensure_venv
+
+echo   [INFO] uv found, syncing workspace dependencies (uv.lock)...
+pushd "%ROOT%"
+uv sync
+if errorlevel 1 (
+    popd
+    echo   [WARN] uv sync failed, falling back to pip...
+    goto pip_ensure_venv
+)
+popd
+echo   [OK] .venv ready (uv)
+goto venv_ok
+
+:pip_ensure_venv
 if not exist "%VENV_PYTHON%" goto create_venv
 
 "%VENV_PYTHON%" -c "import sys; print(sys.version)" >nul 2>&1
@@ -55,7 +71,7 @@ goto venv_ok
 
 :create_venv
 echo   [INFO] .venv not found, creating...
-python -m venv "%BACKEND%\.venv"
+python -m venv "%ROOT%.venv"
 if errorlevel 1 (
     echo   [FAIL] Failed to create .venv
     goto fail
@@ -71,8 +87,8 @@ goto venv_ok
 
 :rebuild_venv
 echo   [INFO] .venv broken, rebuilding...
-rmdir /s /q "%BACKEND%\.venv" 2>nul
-python -m venv "%BACKEND%\.venv"
+rmdir /s /q "%ROOT%.venv" 2>nul
+python -m venv "%ROOT%.venv"
 if errorlevel 1 (
     echo   [FAIL] Failed to create .venv
     goto fail
@@ -178,7 +194,7 @@ if %errorlevel% equ 0 (
 
 :: Start backend
 pushd "%BACKEND%"
-start "Backend" cmd /k ".venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+start "Backend" cmd /k "..\.venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
 popd
 
 :: Wait for backend (initial 5s + max 30s polling)

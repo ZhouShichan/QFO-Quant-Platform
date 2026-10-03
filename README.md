@@ -110,7 +110,8 @@ run_first_time.bat
 
 - 检查 Python 是否可用
 - 检查 Node.js 是否可用
-- 创建后端虚拟环境 `backend/.venv`
+- 检测 uv：可用时执行 `uv sync` 安装依赖；不可用时回退 pip + 国内镜像
+- 创建虚拟环境 `.venv`（项目根目录）
 - 安装后端依赖
 - 安装前端依赖 `frontend/node_modules`
 - 如果没有 `backend/.env`，自动从 `backend/.env.example` 创建
@@ -144,7 +145,7 @@ run_first_time.bat
 
 它默认你已经运行过 `run_first_time.bat`，并且本地已经存在：
 
-- `backend/.venv`
+- `.venv`（项目根目录）
 - `frontend/node_modules`
 - `backend/.env`
 
@@ -183,6 +184,7 @@ git push -u origin main
 backend/.env
 backend/.venv/
 frontend/node_modules/
+.venv/
 backend/quant_data.db
 backend/quant_data.db-wal
 backend/quant_data.db-shm
@@ -198,14 +200,22 @@ backend/logs/
 
 ### 后端
 
+Python 依赖采用 [uv](https://docs.astral.sh/uv/) 的 workspace 模式管理：根目录 `pyproject.toml` 只声明 workspace，依赖范围（宽约束）定义在 `backend/pyproject.toml`。本项目不做版本锁定，`uv.lock` 仅本地生成、不入库。
+
 ```bash
+# 安装依赖（需先安装 uv：https://docs.astral.sh/uv/getting-started/installation/）
+uv sync
+
+# 启动后端
 cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+..\.venv\Scripts\activate
 copy .env.example .env
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+修改依赖后，在 `backend/` 下执行 `uv add <package>`，再运行 `uv sync` 更新环境。
+
+没有 uv 时，可回退用 pip 安装 `backend/requirements.txt`（宽约束版本）。
 
 ### 前端
 
@@ -277,6 +287,8 @@ frontend/                React 前端
 frontend/src/components/ 页面组件
 run_first_time.bat       首次运行脚本
 run_quick_start.bat      日常快速启动脚本
+pyproject.toml           uv workspace 声明（根）
+backend/pyproject.toml   后端依赖与 pytest/ruff 配置
 ```
 
 ## 测试命令
@@ -288,12 +300,28 @@ cd frontend
 npm test
 ```
 
-后端本地测试：
+后端测试（推荐）：
+
+```bash
+cd backend
+uv run pytest
+```
+
+后端开发脚本：
+
+```bash
+cd backend
+uv run bash scripts/test.sh     # pytest + 覆盖率报告（终端 + htmlcov/ 网页版）
+uv run bash scripts/lint.sh     # ruff 静态检查 + 格式一致性检查
+uv run bash scripts/format.sh   # ruff 自动修复 + 格式化
+```
+
+后端本地测试（无 uv 时）：
 
 ```powershell
 cd backend
 $tests = Get-ChildItem tests -Filter "test_*.py" | ForEach-Object { $_.FullName }
-.venv\Scripts\python.exe -m pytest $tests
+..\.venv\Scripts\python.exe -m pytest $tests
 ```
 
 `backend/tests/quick_connection_test.py` 会连接外部数据源，适合手动检查 Tushare、AkShare、BaoStock 等连接状态，不作为普通本地测试必跑项。

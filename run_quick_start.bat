@@ -14,7 +14,7 @@ echo   ROOT: %ROOT%
 echo.
 
 echo [1/2] Starting backend (port 8000)...
-start "Backend" cmd /k "cd /d %BACKEND% && .venv\Scripts\python.exe main.py"
+start "Backend" cmd /k "cd /d %BACKEND% && ..\.venv\Scripts\python.exe main.py"
 
 timeout /t 3 /nobreak >nul
 

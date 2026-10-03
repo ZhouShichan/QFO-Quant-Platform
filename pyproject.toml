@@ -1,0 +1,11 @@
+# uv workspace 根配置
+# 依赖声明与工具配置（pytest/ruff）在 backend/pyproject.toml
+# 前端依赖由 frontend/package.json + npm 管理，与 uv 无关
+
+[tool.uv.workspace]
+members = ["backend"]
+
+[[tool.uv.index]]
+# 默认走国内镜像，与启动脚本的镜像策略一致
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
