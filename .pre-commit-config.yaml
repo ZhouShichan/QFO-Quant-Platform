@@ -1,0 +1,32 @@
+# Git pre-commit 钩子配置
+# 首次使用：cd backend && uv sync && uv run pre-commit install
+# 手动全量检查：uv run --project backend pre-commit run --all-files
+repos:
+  # 通用文件卫生检查（官方维护）
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace      # 去除行尾空白
+      - id: end-of-file-fixer        # 文件末尾补换行符
+      - id: check-yaml               # YAML 语法
+      - id: check-toml               # TOML 语法
+      - id: check-merge-conflict     # 遗留冲突标记
+      - id: check-case-conflict      # 大小写冲突（跨平台协作）
+      - id: check-added-large-files  # 防止误提交大文件
+      - id: debug-statements         # 残留的 breakpoint()/pdb
+
+  # ruff：复用 backend/pyproject.toml 中已有的 lint 配置（E/W/F/I/B/C4/UP）
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check (backend)
+        entry: uv run --project backend ruff check --fix
+        language: system
+        types: [python]
+        files: ^backend/
+      - id: ruff-format
+        name: ruff format (backend)
+        entry: uv run --project backend ruff format
+        language: system
+        types: [python]
+        files: ^backend/
